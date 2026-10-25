@@ -18,5 +18,7 @@
 # virtio-serial socket qemu creates when DomA starts and wpa_supplicant's wlan0
 # control socket exist; from then on the agent scans every 20 s and publishes
 # the result whether or not anything in DomA reads it.
-IMAGE_INSTALL:append = " xt-aaos-host-services xt-xen-cfg-doma xt-doma-wifi-agent"
+# xt-doma-adb adds the DomD adb client and a doma-adb wrapper that targets DomA
+# over the internal Xen management network.
+IMAGE_INSTALL:append = " xt-aaos-host-services xt-xen-cfg-doma xt-doma-wifi-agent xt-doma-adb"
 do_image[depends] += " aaos-guest-binaries:do_deploy"

@@ -199,12 +199,26 @@ PRODUCT_COPY_FILES += \
 #     setprop persist.vendor.doma.wifi_relay false
 # turns it off.
 #
-# These four are board-specific and stay in this board's own directory.
+# These files are board-specific and stay in this board's own directory.
 PRODUCT_COPY_FILES += \
     device/agl/xenvm-trout-rpi5/xenvm_trout_rpi5_arm64/init.xenvm-hwsim.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/init.xenvm-hwsim.rc \
+    device/agl/xenvm-trout-rpi5/xenvm_trout_rpi5_arm64/init.xenvm-adbd-tcp.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/init.xenvm-adbd-tcp.rc \
+    device/agl/xenvm-trout-rpi5/xenvm_trout_rpi5_arm64/doma-adbd-tcp.sh:$(TARGET_COPY_OUT_VENDOR)/bin/doma-adbd-tcp \
     device/agl/xenvm-trout-rpi5/xenvm_trout_rpi5_arm64/doma-shadow-ap.sh:$(TARGET_COPY_OUT_VENDOR)/bin/doma-shadow-ap \
     device/agl/xenvm-trout-rpi5/xenvm_trout_rpi5_arm64/doma-shadow-aps.conf:$(TARGET_COPY_OUT_VENDOR)/etc/doma-shadow-aps.conf \
     device/agl/xenvm-trout-rpi5/xenvm_trout_rpi5_arm64/doma-wifi-relay.sh:$(TARGET_COPY_OUT_VENDOR)/bin/doma-wifi-relay
+
+# DomD-side deployment path: adbd listens on DomA's internal Xen management NIC
+# (192.168.10.x on xenbr0, not external Wi-Fi). init.xenvm-adbd-tcp.rc starts
+# the helper above at sys.boot_completed; it waits for br-shadow, pins a static
+# address on it, then restarts adbd, so DomD deployment does not depend on DHCP. The DomD
+# image ships a matching adb client/wrapper in xt-doma-adb. This is a userdebug
+# lab image, so disable ADB key authorization to keep deployment non-interactive
+# like topo's SSH deploy to the Linux DomU. Do not use this setting in a
+# production image.
+PRODUCT_SYSTEM_DEFAULT_PROPERTIES += \
+    service.adb.tcp.port?=5555 \
+    ro.adb.secure?=0
 
 # The DomA half of the relay, built from device/agl/doma-common/DomaWifiRelay.
 # The RPi4 product builds its own copy from device/sodev/xenvm-cf; the two

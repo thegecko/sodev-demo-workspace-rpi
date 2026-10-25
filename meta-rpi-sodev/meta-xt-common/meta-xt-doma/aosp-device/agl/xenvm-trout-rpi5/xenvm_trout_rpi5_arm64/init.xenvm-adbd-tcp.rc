@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+# Enable DomD -> DomA application deployment over the internal Xen management
+# network. DomA's management path is virtio-net net1 / eth1 in doma.cfg, bridged
+# into DomD's xenbr0 as vif-emu1. In the default shadow-AP mode the guest bridges
+# eth1 into br-shadow; this service pins the ADB address on that internal bridge
+# so deployment does not depend on DHCP. If shadow-AP is disabled and br-shadow
+# never appears, the helper falls back to eth1.
+#
+# The product is userdebug/lab-only. adbd TCP auth is disabled in the product
+# makefile so DomD can deploy non-interactively, like topo deploys to the Linux
+# DomU over SSH. Do not copy this shape into a production image.
+
+service doma_adbd_tcp /vendor/bin/doma-adbd-tcp
+    user root
+    group root net_admin net_raw
+    disabled
+    oneshot
+
+on property:sys.boot_completed=1
+    setprop service.adb.tcp.port 5555
+    start doma_adbd_tcp
