@@ -30,9 +30,44 @@ IMAGE_INSTALL:append = "${@bb.utils.contains('DISTRO_FEATURES', 'enable_virtio',
 IMAGE_INSTALL:append = " \
     glmark2 \
     coreutils \
+    avahi-daemon \
     "
 
 # xt-rpi5-domain (boot-time vCPU pinning) already comes from the vc4 base above.
+
+SODEV_NET_MANAGEMENT_HOSTNAME ??= "basecamp-net"
+
+ROOTFS_POSTPROCESS_COMMAND += "set_domd_management_identity; "
+set_domd_management_identity() {
+    sed -i 's|@SODEV_MANAGEMENT_HOSTNAME@|${SODEV_NET_MANAGEMENT_HOSTNAME}|g' \
+        ${IMAGE_ROOTFS}${bindir}/domd-flatbridge-up
+    install -d ${IMAGE_ROOTFS}${sysconfdir}/avahi
+    cat > ${IMAGE_ROOTFS}${sysconfdir}/avahi/avahi-daemon.conf <<EOF
+[server]
+host-name=${SODEV_NET_MANAGEMENT_HOSTNAME}
+domain-name=local
+use-ipv4=yes
+use-ipv6=no
+allow-interfaces=xenbr0
+
+[publish]
+publish-addresses=yes
+publish-hinfo=no
+publish-workstation=no
+
+[wide-area]
+enable-wide-area=no
+
+[reflector]
+enable-reflector=no
+EOF
+    install -d ${IMAGE_ROOTFS}${sysconfdir}/systemd/resolved.conf.d
+    cat > ${IMAGE_ROOTFS}${sysconfdir}/systemd/resolved.conf.d/management-name.conf <<'EOF'
+[Resolve]
+MulticastDNS=no
+LLMNR=yes
+EOF
+}
 
 # Exclude the licence-restricted Wi-Fi firmware packages. A board whose radio
 # needs one of them takes it back out of both lists in its bbappend.

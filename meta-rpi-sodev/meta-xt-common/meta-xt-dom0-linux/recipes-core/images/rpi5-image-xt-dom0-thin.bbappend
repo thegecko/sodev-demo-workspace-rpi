@@ -21,3 +21,34 @@ IMAGE_INSTALL:append = " ${XT_DOMU_CFG_INSTALL}"
 # when DomZ is built (--domz), else "".
 XT_DOMZ_CFG_INSTALL ??= ""
 IMAGE_INSTALL:append = " ${XT_DOMZ_CFG_INSTALL}"
+
+# Dedicated USB-C point-to-point management network into Linux Dom0:
+#   host side: DHCP from 198.18.77.10-198.18.77.20/24
+#   Dom0 side: 198.18.77.2/24 (usb0)
+IMAGE_INSTALL:append = " dom0-usb-gadget avahi-daemon"
+
+SODEV_USB_MDNS_HOSTNAME ??= "basecamp-usb"
+
+ROOTFS_POSTPROCESS_COMMAND += "configure_usb_management_mdns; "
+configure_usb_management_mdns() {
+    install -d ${IMAGE_ROOTFS}${sysconfdir}/avahi
+    cat > ${IMAGE_ROOTFS}${sysconfdir}/avahi/avahi-daemon.conf <<EOF
+[server]
+host-name=${SODEV_USB_MDNS_HOSTNAME}
+domain-name=local
+use-ipv4=yes
+use-ipv6=no
+allow-interfaces=usb0
+
+[publish]
+publish-addresses=yes
+publish-hinfo=no
+publish-workstation=no
+
+[wide-area]
+enable-wide-area=no
+
+[reflector]
+enable-reflector=no
+EOF
+}
