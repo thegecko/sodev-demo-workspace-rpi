@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # /vendor/bin/doma-shadow-ap -- the shadow-AP bring-up script.
+# /vendor/bin/doma-wifi-relay and /vendor/bin/doma-adbd-tcp intentionally share
+# this domain; see sepolicy/file_contexts for the rationale.
 #
 # WHY THIS EXISTS EVEN THOUGH THE BOARD IS PERMISSIVE.
 # This product boots permissive: device/epam/aosp-xenvm-trout/xenvm_trout_arm64/

@@ -20,20 +20,11 @@
 # .10.13 reservation DomD's dnsmasq pins to eth1's MAC is never answered; DomA
 # takes its lease on wlan0 instead. The Xen PV console is unaffected.
 #
-# DomD's dnsmasq reserves 192.168.10.15 for wlan0 (sodev-net.inc defines
-# XT_DOMA_WLAN0_{MAC,PERM_MAC,IP} and the dnsmasq bbappend ships the dhcp-host
-# line), but only for the MACs that line lists, and the station does not use the
-# hwsim perm_addr: CuttlefishWifiOverlay (inherited via
-# cuttlefish/shared/device.mk -> trout -> epam) sets
-# config_wifi_connected_mac_randomization_supported=true, so the station
-# associates with a per-SSID PERSISTENT RANDOMIZED MAC. XT_DOMA_WLAN0_MAC ships
-# empty (sodev-net.inc says why), so by default DomA takes an address from the
-# DHCP range; `adb connect 192.168.10.15:5555` works once XT_DOMA_WLAN0_MAC is
-# set to the MAC the station uses for that SSID (sodev-net.inc says how). adb
-# over vsock does not depend on any of this. Do not read wlan0's MAC while
-# disconnected -- the framework parks a fresh random address on the interface
-# then (ClientModeImpl CMD_DELAYED_MAC_RANDOMIZATION and the disconnect path),
-# so it looks like it rotates every time. Read it while associated.
+# DomD deployment does not depend on this DHCP lease: init.xenvm-adbd-tcp.rc
+# starts /vendor/bin/doma-adbd-tcp at sys.boot_completed, and that helper pins
+# 192.168.10.15/24 on br-shadow before restarting adbd. The shared framework
+# overlay still disables connected-MAC randomization so DHCP, when used for normal
+# networking, remains stable too.
 #
 # Manual control:
 #     stop doma_shadow_ap ; start doma_shadow_ap

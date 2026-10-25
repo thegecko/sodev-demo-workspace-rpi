@@ -12,6 +12,10 @@
 # Attribution stays useful because the two run at different times: doma_shadow_ap is
 # oneshot at bring-up, doma_wifi_relay is the long-lived loop.
 /vendor/bin/doma-wifi-relay      u:object_r:doma_shadow_ap_exec:s0
+# doma-adbd-tcp also runs as this domain. It is a small boot-time network helper
+# that uses the same shell/toolbox/ip/net_admin shape as doma-shadow-ap; sharing
+# the type avoids adding another near-identical permissive helper domain.
+/vendor/bin/doma-adbd-tcp        u:object_r:doma_shadow_ap_exec:s0
 
 # /data/vendor/wifi/shadow holds the generated hostapd.conf, the AP list
 # doma-wifi-relay writes (aps.conf) and hostapd's ctrl_interface sockets.

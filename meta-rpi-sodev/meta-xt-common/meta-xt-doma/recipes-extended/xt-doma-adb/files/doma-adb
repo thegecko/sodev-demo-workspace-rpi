@@ -1,0 +1,55 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Run adb against the DomA Android guest over the internal Xen bridge.
+
+set -eu
+
+DEFAULT_TARGETS="@XT_DOMA_WLAN0_IP@:5555 @XT_DOMA_IP@:5555"
+TARGETS="${DOMA_ADB_TARGET:-${DOMA_ADB_TARGETS:-$DEFAULT_TARGETS}}"
+
+usage() {
+    cat <<EOF
+Usage:
+  doma-adb connect
+  doma-adb install <apk> [adb install args]
+  doma-adb shell [command...]
+  doma-adb <any adb command args>
+
+Environment:
+  DOMA_ADB_TARGET   Override target, for example 192.168.10.15:5555
+  DOMA_ADB_TARGETS  Override fallback list, default ${DEFAULT_TARGETS}
+EOF
+}
+
+connect_target() {
+    for target in $TARGETS; do
+        out="$(adb connect "$target" 2>&1 || true)"
+        case "$out" in
+            *connected*|*already\ connected*)
+                printf '%s\n' "$target"
+                return 0
+                ;;
+        esac
+    done
+    printf '%s\n' "${TARGETS%% *}"
+    return 1
+}
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+if [ "${1:-}" = "connect" ]; then
+    connect_target >/dev/null
+    exit $?
+fi
+
+# Ensure the TCP transport exists before running commands that need -s.
+TARGET="$(connect_target)"
+
+if [ "$#" -eq 0 ]; then
+    exec adb -s "$TARGET" shell
+fi
+
+exec adb -s "$TARGET" "$@"

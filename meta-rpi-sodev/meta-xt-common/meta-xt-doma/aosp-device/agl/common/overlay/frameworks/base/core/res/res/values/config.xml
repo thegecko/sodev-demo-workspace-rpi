@@ -25,4 +25,11 @@
 -->
 <resources>
     <string name="config_defaultDialer" translatable="false">com.android.car.dialer</string>
+    <!--
+        Lab deployment gives DomD a stable TCP adb target for DomA by pinning a
+        static address on br-shadow at boot. Keep DHCP stable too: the shadow-AP
+        path bridges DomA's wlan0 to DomD's xenbr0, and connected-MAC
+        randomization would make DomD's dnsmasq lease move.
+    -->
+    <bool name="config_wifi_connected_mac_randomization_supported">false</bool>
 </resources>

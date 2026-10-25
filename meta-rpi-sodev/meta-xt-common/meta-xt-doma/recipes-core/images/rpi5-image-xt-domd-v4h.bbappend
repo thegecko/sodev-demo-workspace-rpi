@@ -14,6 +14,8 @@
 # xt-doma-wifi-agent is the DomD half of DomA's shadow-AP Wi-Fi when DomD owns the
 # real radio. With DOM0_OS=linux the radio belongs to Dom0, so do not install the
 # DomD agent/supplicant pair that would wait forever for a non-existent DomD wlan0.
+# xt-doma-adb adds the DomD adb client and a doma-adb wrapper that targets DomA
+# over the internal Xen management network.
 XT_DOMA_WIFI_AGENT_INSTALL ??= "${@'' if d.getVar('DOM0_OS') == 'linux' else 'xt-doma-wifi-agent'}"
-IMAGE_INSTALL:append = " xt-aaos-host-services xt-xen-cfg-doma ${XT_DOMA_WIFI_AGENT_INSTALL}"
+IMAGE_INSTALL:append = " xt-aaos-host-services xt-xen-cfg-doma ${XT_DOMA_WIFI_AGENT_INSTALL} xt-doma-adb"
 do_image[depends] += " aaos-guest-binaries:do_deploy"
