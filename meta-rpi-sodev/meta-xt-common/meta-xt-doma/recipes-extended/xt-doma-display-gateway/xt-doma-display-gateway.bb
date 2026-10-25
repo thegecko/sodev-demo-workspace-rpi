@@ -16,7 +16,7 @@ SYSTEMD_SERVICE:${PN} = "doma-display-gateway.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 RDEPENDS:${PN} = " \
-    python3 \
+    python3-core \
     python3-modules \
     xt-doma-adb \
 "
