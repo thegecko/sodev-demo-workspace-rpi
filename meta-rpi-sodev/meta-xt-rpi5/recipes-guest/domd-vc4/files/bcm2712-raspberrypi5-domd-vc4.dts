@@ -45,9 +45,8 @@
 	#size-cells = <0x2>;
 
 	/* SODEV-LINUX-DOM0-SD-STRIP-BEGIN: domd-vc4.bb strips this node for
-	 * DOM0_OS=linux, where DomD has neither of the two mmc controllers it
-	 * names: the SD card and the Wi-Fi SDIO controller both stay with the
-	 * Linux Dom0. */
+	 * DOM0_OS=linux. That flavour boots DomD from /dev/xvda and omits the
+	 * SD-card controller, so the mmc0/mmc1 aliases below would be misleading. */
 	/*
 	 * Pin the mmc host numbering.
 	 *
@@ -1359,19 +1358,10 @@
 		};
 		/* SODEV-LINUX-DOM0-SD-STRIP-END */
 
-		/* SODEV-LINUX-DOM0-SD-STRIP-BEGIN: domd-vc4.bb strips everything from here to
-		 * the matching end marker below wl_on_reg for DOM0_OS=linux:
-		 * gio, the SCMI shared memory and protocol nodes with their pin
-		 * groups, the Wi-Fi SDIO controller and wl_on_reg. That flavour
-		 * applies no SCMI host overlay, so there is no SCMI server for
-		 * these nodes to reach, the Wi-Fi pins cannot be muxed and the
-		 * shared-memory page is not set aside. The Wi-Fi SDIO
-		 * controller stays with the Linux Dom0, which also takes its
-		 * interrupt (SPI 274): a DomD that claimed it too would make
-		 * Xen panic at DomD creation (route_irq_to_guest -EBUSY).
-		 * Nothing that survives the strip may refer to a label inside it: the
-		 * Bluetooth UART's block above, stripped in the same flavour, is the
-		 * one user outside it (&gio, &scmi_uarta_24_pins). */
+		/* DomD owns Wi-Fi in both Dom0 flavours. Linux Dom0 keeps the SD-card
+		 * controller, but the Wi-Fi SDIO controller is separate and is marked
+		 * xen,passthrough by both boot scripts. SCMI is present in both flavours so
+		 * DomD can mux the Wi-Fi pins without directly driving pinctrl@7d504100. */
 		/* gio: the 32+4-bit GPIO bank at 0x7d508500. BT_ON is line 29
 		 * (gpio-line-names index 29 in the host DT), and the bluetooth node
 		 * above drives it through shutdown-gpios.
@@ -1770,7 +1760,6 @@
 			startup-delay-us = <0x249f0>;
 			enable-active-high;
 		};
-		/* SODEV-LINUX-DOM0-SD-STRIP-END */
 
 		/* Always-on fixed regulator for the Bluetooth controller's vbat/vddio.
 		 * It has no GPIO and switches nothing; it exists because hci_bcm takes
@@ -1804,20 +1793,12 @@
 			status = "okay";
 		};
 
-		/* SODEV-LINUX-DOM0-SD-STRIP-BEGIN: domd-vc4.bb strips this whole SD/GPIO
-		 * block for DOM0_OS=linux. In the linux flavour the thin Linux
-		 * Dom0 is the hardware domain and KEEPS the SoC SDHCI
-		 * (mmc@fff000) + AON GPIO, mounting /dev/mmcblk0p1 and
-		 * block-attaching p3/p4 to DomD (xvdb/xvdc). Only the zephyr
-		 * flavour hands the SD to DomD, so only there does DomD need
-		 * this block (which claims mmc IRQ SPI273 ->
-		 * route_irq_to_guest). Comments are dropped by dtc, so the
-		 * zephyr DTB is byte-identical with these markers. */
 		/* ===== emmc2 clock (200 MHz), shared by TWO controllers =====
 		 * It feeds mmc@1000fff000 (the SoC SD card controller, below)
 		 * and mmc@1001100000 (the Wi-Fi SDIO controller, above).
-		 * DOM0_OS=linux strips both, so it goes with them. 0xbebc200 =
-		 * 200000000. Same value the host DTB gives emmc2.
+		 * Linux Dom0 keeps the SD-card controller but DomD still needs this clock for
+		 * the separate Wi-Fi SDIO controller, so it must survive the SD-card strip.
+		 * 0xbebc200 = 200000000. Same value the host DTB gives emmc2.
 		 */
 		clk_emmc2: clk_emmc2 {
 			compatible = "fixed-clock";
@@ -1826,6 +1807,10 @@
 			clock-frequency = <0xbebc200>;
 		};
 
+		/* SODEV-LINUX-DOM0-SD-STRIP-BEGIN: domd-vc4.bb strips this whole SD/GPIO
+		 * block for DOM0_OS=linux. In that flavour Linux Dom0 keeps the SD-card
+		 * controller and AON GPIO, while DomD keeps only the separate Wi-Fi SDIO
+		 * controller above. */
 		/* ------------------------------------------------------------------
 		 * SoC-internal SDHCI (SD card slot) passthrough
 		 * to DomD. In the disaggregated topology the Dom0 is Zephyr (no blkback), so DomD owns the SD

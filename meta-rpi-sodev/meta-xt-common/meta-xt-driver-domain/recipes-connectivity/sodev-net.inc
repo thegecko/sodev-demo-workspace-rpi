@@ -1,5 +1,5 @@
 # sodev-net.inc — single source of truth for the RPi5 Xen cockpit DomD network
-# topology (IP addresses, MACs, DHCP range).
+# topology (management hostname, IP addresses, MACs, DHCP range).
 #
 # Consumers `require` this file and derive their shipped config from these vars,
 # so each address/MAC lives in exactly one place:
@@ -26,6 +26,9 @@
 #
 # NOTE: bitbake has no inline comments — a trailing `# ...` on an assignment line
 # is a parse error ("unparsed line"), so every annotation below is on its own line.
+
+# --- management identity ---
+SODEV_NET_MANAGEMENT_HOSTNAME ??= "basecamp-net"
 
 # --- flat L2 management subnet (192.168.10.0/24) ---
 XT_NET_FLAT_SUBNET  ??= "192.168.10.0/24"

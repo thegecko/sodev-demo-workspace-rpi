@@ -13,10 +13,12 @@
 log() { echo "domd-flatbridge-up: $*"; }
 
 DHCP_PID=/run/udhcpc-xenbr0.pid
+DOMD_XENBR0_ADDR=@XT_DOMD_XENBR0_IP@/24
 DOMU_ADDR=192.168.10.12
 DOM0_P2P_SUBNET=192.168.0.0/24
 DOMA_ADDRS="192.168.10.13 192.168.10.14 192.168.10.15"
 LAN_APP_MARK=0x12
+WIFI_APP_MARK=0x13
 # Self-report progress into xenstore (readable from Dom0 as
 # /local/domain/1/data/flatbridge even when DomD console output is
 # backpressured and sshd is down -- the exact situation this instruments).
@@ -52,6 +54,10 @@ if [ ! -e /sys/class/net/xenbr0 ]; then
     exit 1
 fi
 ip link set xenbr0 up 2>/dev/null
+if ! ip -4 addr show dev xenbr0 | grep -q " inet ${DOMD_XENBR0_ADDR} "; then
+    ip addr add "$DOMD_XENBR0_ADDR" dev xenbr0 2>/dev/null && log "xenbr0 internal address $DOMD_XENBR0_ADDR" || \
+        log "WARNING: failed to add $DOMD_XENBR0_ADDR to xenbr0"
+fi
 xsr "xenbr0-up"
 # PC->Dom0 SSH is routed THROUGH DomD (PC -> xenbr0 .10.10 -> eth1 .0.11 ->
 # Dom0 vif .0.1), so DomD must forward. This used to come implicitly from
@@ -72,10 +78,10 @@ ip link set eth0 master xenbr0 2>/dev/null && log "eth0 -> xenbr0"
 ip link set eth0 up 2>/dev/null
 xsr "eth0master=$([ -e /sys/class/net/eth0/master ] && echo y || echo n)"
 
-# Get the external wired address by DHCP on the final bridge. This intentionally
-# mirrors the manual recovery command (`udhcpc -i xenbr0`) instead of changing
-# the early boot networkd topology.
-if command -v udhcpc >/dev/null 2>&1 && ! ip -4 addr show dev xenbr0 | grep -q ' inet '; then
+# Get an optional external wired address by DHCP on the final bridge. The static
+# internal .10 address above is kept so DomD can always route to DomU, including
+# Wi-Fi-only boots where Ethernet DHCP has no server.
+if command -v udhcpc >/dev/null 2>&1; then
     [ -f "$DHCP_PID" ] && kill "$(cat "$DHCP_PID")" 2>/dev/null || true
     rm -f "$DHCP_PID"
     udhcpc -i xenbr0 -p "$DHCP_PID" -b -R -x hostname:@SODEV_MANAGEMENT_HOSTNAME@ >/dev/null 2>&1 && log "udhcpc started on xenbr0" || \
@@ -195,7 +201,7 @@ if command -v iptables >/dev/null 2>&1; then
     # External management name policy for wired/LAN ingress on xenbr0:
     #   - TCP/22 and TCP/80 terminate on DomD for management.
     #   - Other TCP ports are forwarded to the Linux DomU so deployed Topo web
-    #     examples can be opened as http://basecamp-net:<port>/.
+    #     examples can be opened through the management hostname and selected port.
     #
     # Scope DNAT to packets that arrived from the bridge and target a local DomD
     # address. DomD-originated traffic (including Topo's SSH to the DomU) uses the
@@ -232,6 +238,28 @@ if command -v iptables >/dev/null 2>&1; then
         -m mark --mark "$LAN_APP_MARK/0xffffffff" -j MASQUERADE
     ipt_add -A FORWARD -i xenbr0 -o xenbr0 -p tcp -d "$DOMU_ADDR" -j ACCEPT
     ipt_add -A FORWARD -i xenbr0 -o xenbr0 -p tcp -s "$DOMU_ADDR" -j ACCEPT
+
+    # External management name policy for Wi-Fi ingress on wlan0 mirrors Ethernet:
+    # TCP/22 and TCP/80 terminate on DomD; all other TCP ports are routed to the
+    # Linux DomU so deployed examples can be reached through the management hostname
+    # and selected port.
+    # DomD-originated traffic is not rewritten because this only touches PREROUTING.
+    add_wifi_app_forward() {
+        _range="$1"
+        ipt_add -t mangle -A PREROUTING -i "$UPLINK_WIFI_IF" -p tcp --dport "$_range" \
+            -m addrtype --dst-type LOCAL \
+            -j MARK --set-xmark "$WIFI_APP_MARK/0xffffffff"
+        ipt_add -t nat -A PREROUTING -i "$UPLINK_WIFI_IF" -p tcp --dport "$_range" \
+            -m addrtype --dst-type LOCAL \
+            -j DNAT --to-destination "$DOMU_ADDR"
+    }
+    add_wifi_app_forward 1:21
+    add_wifi_app_forward 23:79
+    add_wifi_app_forward 81:65535
+    ipt_add -t nat -A POSTROUTING -o xenbr0 -p tcp -d "$DOMU_ADDR/32" \
+        -m mark --mark "$WIFI_APP_MARK/0xffffffff" -j MASQUERADE
+    ipt_add -A FORWARD -i "$UPLINK_WIFI_IF" -o xenbr0 -p tcp -d "$DOMU_ADDR" -j ACCEPT
+    ipt_add -A FORWARD -i xenbr0 -o "$UPLINK_WIFI_IF" -p tcp -s "$DOMU_ADDR" -j ACCEPT
 
     ipt_add -I FORWARD -i xenbr0 -o "$UPLINK_WIFI_IF" -j ACCEPT
     # The stateful return rule is OPTIONAL: it needs the xt_conntrack module,

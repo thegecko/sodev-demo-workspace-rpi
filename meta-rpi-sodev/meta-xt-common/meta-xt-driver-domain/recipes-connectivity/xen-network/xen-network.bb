@@ -143,6 +143,10 @@ do_install() {
     install -m 0644 ${S}/domd-flatbridge.service ${D}${systemd_system_unitdir}/domd-flatbridge.service
     install -d ${D}${bindir}
     install -m 0755 ${S}/domd-flatbridge-up ${D}${bindir}/domd-flatbridge-up
+    sed -i 's|@XT_DOMD_XENBR0_IP@|${XT_DOMD_XENBR0_IP}|g' \
+        ${D}${bindir}/domd-flatbridge-up
+    sed -i 's|@SODEV_MANAGEMENT_HOSTNAME@|${SODEV_NET_MANAGEMENT_HOSTNAME}|g' \
+        ${D}${bindir}/domd-flatbridge-up
 }
 
 # [C2 single source] Keep the boot-time DomD eth0 address and Dom0<->DomD vif

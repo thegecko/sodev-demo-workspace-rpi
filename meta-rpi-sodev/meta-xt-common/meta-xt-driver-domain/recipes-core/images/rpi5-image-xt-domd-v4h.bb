@@ -13,6 +13,7 @@ DESCRIPTION = "\
 
 # Base: rpi5-image-xt-domd-vc4 (xen bits + xt-rpi5-domain etc.)
 require recipes-core/images/rpi5-image-xt-domd-vc4.bb
+require recipes-connectivity/sodev-net.inc
 
 # Additional driver-domain packages.
 IMAGE_INSTALL:append = " \
@@ -39,8 +40,6 @@ IMAGE_INSTALL:append = " \
 
 # xt-rpi5-domain (boot-time vCPU pinning) already comes from the vc4 base above.
 
-SODEV_NET_MANAGEMENT_HOSTNAME ??= "basecamp-net"
-
 ROOTFS_POSTPROCESS_COMMAND += "set_domd_management_identity; "
 set_domd_management_identity() {
     sed -i 's|@SODEV_MANAGEMENT_HOSTNAME@|${SODEV_NET_MANAGEMENT_HOSTNAME}|g' \
@@ -52,7 +51,7 @@ host-name=${SODEV_NET_MANAGEMENT_HOSTNAME}
 domain-name=local
 use-ipv4=yes
 use-ipv6=no
-allow-interfaces=xenbr0
+allow-interfaces=xenbr0,wlan0
 
 [publish]
 publish-addresses=yes
