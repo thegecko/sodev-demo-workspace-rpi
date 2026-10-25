@@ -3,11 +3,10 @@ set -eu
 
 GADGET="usb-gadget"
 UDC="1000480000.usb"
-HOSTNAME="@SODEV_MANAGEMENT_HOSTNAME@"
 DEV_ADDR="02:00:00:00:77:02"
 HOST_ADDR="02:00:00:00:77:01"
-USB_ADDR="192.168.77.2/24"
-USB_NET="192.168.77.0/24"
+USB_ADDR="198.18.77.2/24"
+USB_NET="198.18.77.0/24"
 DOM0_VIF_ADDR="192.168.0.1"
 DOMD_VIF_ADDR="192.168.0.11"
 DOMD_VIF="vif1.0"
@@ -16,8 +15,6 @@ DHCP_PID="/run/udhcpd-usb0.pid"
 CONFIGFS="/sys/kernel/config"
 GADGETS="${CONFIGFS}/usb_gadget"
 GADGET_DIR="${GADGETS}/${GADGET}"
-
-hostname "${HOSTNAME}" || true
 
 mkdir -p "${CONFIGFS}"
 if ! grep -q " ${CONFIGFS} configfs " /proc/mounts; then
@@ -85,7 +82,6 @@ fi
 ip addr replace "${USB_ADDR}" dev usb0
 ip link set usb0 up
 
-resolvectl mdns usb0 yes 2>/dev/null || true
 resolvectl llmnr usb0 yes 2>/dev/null || true
 
 if command -v udhcpd >/dev/null 2>&1 && [ -f "${DHCP_CONF}" ]; then

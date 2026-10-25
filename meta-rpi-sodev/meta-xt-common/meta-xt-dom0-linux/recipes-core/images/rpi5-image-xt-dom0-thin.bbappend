@@ -23,16 +23,32 @@ XT_DOMZ_CFG_INSTALL ??= ""
 IMAGE_INSTALL:append = " ${XT_DOMZ_CFG_INSTALL}"
 
 # Dedicated USB-C point-to-point management network into Linux Dom0:
-#   host side: DHCP from 192.168.77.10-192.168.77.20/24
-#   Dom0 side: 192.168.77.2/24 (usb0)
-IMAGE_INSTALL:append = " dom0-usb-gadget"
+#   host side: DHCP from 198.18.77.10-198.18.77.20/24
+#   Dom0 side: 198.18.77.2/24 (usb0)
+IMAGE_INSTALL:append = " dom0-usb-gadget avahi-daemon"
 
-# Advertised name for USB management discovery.
-SODEV_MANAGEMENT_HOSTNAME ??= "basecamp"
+SODEV_USB_MDNS_HOSTNAME ??= "basecamp-usb"
 
-ROOTFS_POSTPROCESS_COMMAND += "set_usb_gadget_hostname; "
-set_usb_gadget_hostname() {
-    echo "${SODEV_MANAGEMENT_HOSTNAME}" > ${IMAGE_ROOTFS}${sysconfdir}/hostname
-    sed -i 's|@SODEV_MANAGEMENT_HOSTNAME@|${SODEV_MANAGEMENT_HOSTNAME}|g' \
-        ${IMAGE_ROOTFS}${bindir}/dom0-usb-gadget-up
+ROOTFS_POSTPROCESS_COMMAND += "configure_usb_management_mdns; "
+configure_usb_management_mdns() {
+    install -d ${IMAGE_ROOTFS}${sysconfdir}/avahi
+    cat > ${IMAGE_ROOTFS}${sysconfdir}/avahi/avahi-daemon.conf <<EOF
+[server]
+host-name=${SODEV_USB_MDNS_HOSTNAME}
+domain-name=local
+use-ipv4=yes
+use-ipv6=no
+allow-interfaces=usb0
+
+[publish]
+publish-addresses=yes
+publish-hinfo=no
+publish-workstation=no
+
+[wide-area]
+enable-wide-area=no
+
+[reflector]
+enable-reflector=no
+EOF
 }

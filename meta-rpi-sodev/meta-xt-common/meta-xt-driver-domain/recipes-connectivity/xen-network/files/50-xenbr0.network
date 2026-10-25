@@ -13,5 +13,5 @@ Name=xenbr0
 [Network]
 ConfigureWithoutCarrier=yes
 LinkLocalAddressing=no
-MulticastDNS=yes
+MulticastDNS=no
 LLMNR=yes
