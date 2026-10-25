@@ -16,6 +16,8 @@
 # DomD agent/supplicant pair that would wait forever for a non-existent DomD wlan0.
 # xt-doma-adb adds the DomD adb client and a doma-adb wrapper that targets DomA
 # over the internal Xen management network.
+# xt-doma-display-gateway serves DomA's Android display and keyboard/mouse input
+# from DomD on TCP/10000 for USB/Ethernet/Wi-Fi browser access.
 XT_DOMA_WIFI_AGENT_INSTALL ??= "${@'' if d.getVar('DOM0_OS') == 'linux' else 'xt-doma-wifi-agent'}"
-IMAGE_INSTALL:append = " xt-aaos-host-services xt-xen-cfg-doma ${XT_DOMA_WIFI_AGENT_INSTALL} xt-doma-adb"
+IMAGE_INSTALL:append = " xt-aaos-host-services xt-xen-cfg-doma ${XT_DOMA_WIFI_AGENT_INSTALL} xt-doma-adb xt-doma-display-gateway"
 do_image[depends] += " aaos-guest-binaries:do_deploy"

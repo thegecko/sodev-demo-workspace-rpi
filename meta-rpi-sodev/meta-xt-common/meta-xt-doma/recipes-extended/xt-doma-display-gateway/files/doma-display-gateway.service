@@ -1,0 +1,17 @@
+[Unit]
+Description=DomA browser display/input gateway
+Documentation=man:adb(1)
+# It is safe to start before DomA is fully booted: the HTTP service comes up, and
+# each frame/input request retries through doma-adb. Ordering after the guest
+# create unit avoids noisy early connection attempts on normal boots.
+After=network-online.target xl-create-doma.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/doma-display-gateway --host 0.0.0.0 --port 10000
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

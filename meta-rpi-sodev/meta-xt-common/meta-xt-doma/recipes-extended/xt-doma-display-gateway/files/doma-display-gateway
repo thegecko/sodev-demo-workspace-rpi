@@ -1,0 +1,310 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: MIT
+"""Tiny DomD-hosted browser console for the DomA Android guest.
+
+The display path intentionally uses adb `screencap -p` rather than WebRTC or a
+QEMU display protocol. That keeps the first remote-view/control path independent
+of the fragile HDMI/Weston routing and of browser-side codec support. It is a
+low-FPS management/demo console, not a replacement for the physical display.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import threading
+import time
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
+
+
+DEFAULT_WIDTH = 1920
+DEFAULT_HEIGHT = 1080
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+adb_lock = threading.Lock()
+size_lock = threading.Lock()
+cached_size = (DEFAULT_WIDTH, DEFAULT_HEIGHT)
+cached_size_at = 0.0
+
+
+KEYEVENTS = {
+    "Enter": "66",
+    "Backspace": "67",
+    "Delete": "112",
+    "Escape": "4",
+    "Tab": "61",
+    "ArrowUp": "19",
+    "ArrowDown": "20",
+    "ArrowLeft": "21",
+    "ArrowRight": "22",
+    "Home": "3",
+    "End": "123",
+    "PageUp": "92",
+    "PageDown": "93",
+    "F5": "82",
+}
+
+
+def run_adb(args: list[str], timeout: float = 10.0, input_bytes: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
+    adb = os.environ.get("DOMA_ADB", "/usr/bin/doma-adb")
+    command = [adb, *args]
+    try:
+        return subprocess.run(
+            command,
+            input=input_bytes,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(command, 124, b"", b"adb command timed out")
+
+
+def android_size() -> tuple[int, int]:
+    global cached_size, cached_size_at
+    now = time.monotonic()
+    with size_lock:
+        if now - cached_size_at < 10:
+            return cached_size
+
+    proc = run_adb(["shell", "wm", "size"], timeout=5)
+    text = (proc.stdout + proc.stderr).decode("utf-8", "replace")
+    match = re.search(r"Physical size:\s*(\d+)x(\d+)", text) or re.search(r"Override size:\s*(\d+)x(\d+)", text)
+    if match:
+        width, height = int(match.group(1)), int(match.group(2))
+    else:
+        width, height = DEFAULT_WIDTH, DEFAULT_HEIGHT
+
+    with size_lock:
+        cached_size = (width, height)
+        cached_size_at = now
+    return width, height
+
+
+def clamp_coord(value: Any, maximum: int) -> int:
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        f = 0.0
+    if f <= 1.0:
+        f *= maximum
+    return max(0, min(maximum - 1, int(round(f))))
+
+
+def android_text_arg(value: str) -> str:
+    # Android's `input text` treats %s as a space. Keep the accepted character set
+    # deliberately small so browser keypresses cannot become shell metacharacters.
+    out = []
+    for ch in value[:64]:
+        if ch == " ":
+            out.append("%s")
+        elif ch.isalnum() or ch in "._-@:/,+=":
+            out.append(ch)
+    return "".join(out)
+
+
+def send_input(event: dict[str, Any]) -> tuple[int, str]:
+    width, height = android_size()
+    kind = event.get("type")
+
+    if kind == "tap":
+        x = clamp_coord(event.get("x"), width)
+        y = clamp_coord(event.get("y"), height)
+        args = ["shell", "input", "tap", str(x), str(y)]
+    elif kind == "swipe":
+        x1 = clamp_coord(event.get("x1"), width)
+        y1 = clamp_coord(event.get("y1"), height)
+        x2 = clamp_coord(event.get("x2"), width)
+        y2 = clamp_coord(event.get("y2"), height)
+        try:
+            duration = int(event.get("duration", 250))
+        except (TypeError, ValueError):
+            duration = 250
+        duration = max(1, min(2000, duration))
+        args = ["shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), str(duration)]
+    elif kind == "wheel":
+        x = clamp_coord(event.get("x", 0.5), width)
+        y = clamp_coord(event.get("y", 0.5), height)
+        try:
+            delta = float(event.get("deltaY", 0))
+        except (TypeError, ValueError):
+            delta = 0.0
+        distance = max(120, min(700, int(abs(delta) * 0.8) or 260))
+        direction = -1 if delta > 0 else 1
+        y2 = max(0, min(height - 1, y + direction * distance))
+        args = ["shell", "input", "swipe", str(x), str(y), str(x), str(y2), "180"]
+    elif kind == "key":
+        key = str(event.get("key", ""))
+        if key in KEYEVENTS:
+            args = ["shell", "input", "keyevent", KEYEVENTS[key]]
+        elif len(key) == 1:
+            text = android_text_arg(key)
+            if not text:
+                return HTTPStatus.BAD_REQUEST, "unsupported key"
+            args = ["shell", "input", "text", text]
+        else:
+            return HTTPStatus.BAD_REQUEST, "unsupported key"
+    elif kind == "text":
+        text = android_text_arg(str(event.get("text", "")))
+        if not text:
+            return HTTPStatus.BAD_REQUEST, "empty/unsupported text"
+        args = ["shell", "input", "text", text]
+    else:
+        return HTTPStatus.BAD_REQUEST, "unknown input type"
+
+    with adb_lock:
+        proc = run_adb(args, timeout=8)
+    if proc.returncode != 0:
+        return HTTPStatus.BAD_GATEWAY, (proc.stderr or proc.stdout).decode("utf-8", "replace")[-500:]
+    return HTTPStatus.OK, "ok"
+
+
+INDEX = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DomA Android Display</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px sans-serif; }
+    #bar { padding: 0.5rem 0.75rem; background: #222; display: flex; gap: 1rem; align-items: center; }
+    #screen { display: block; max-width: 100vw; max-height: calc(100vh - 2.4rem); margin: auto; outline: none; cursor: crosshair; }
+    #status { opacity: 0.75; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <strong>DomA Android</strong>
+    <span id="status">click display, then use keyboard/mouse</span>
+  </div>
+  <img id="screen" tabindex="0" src="/stream" alt="DomA Android display">
+  <script>
+    const screen = document.getElementById('screen');
+    const status = document.getElementById('status');
+    let down = null;
+
+    function norm(ev) {
+      const r = screen.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)),
+        y: Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height)),
+      };
+    }
+    async function send(payload) {
+      try {
+        const res = await fetch('/input', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload)});
+        status.textContent = res.ok ? 'input sent' : 'input failed: ' + await res.text();
+      } catch (e) {
+        status.textContent = 'input failed: ' + e;
+      }
+    }
+    screen.addEventListener('error', () => { status.textContent = 'stream disconnected; retrying'; setTimeout(() => screen.src = '/stream?' + Date.now(), 1000); });
+    screen.addEventListener('pointerdown', ev => { screen.focus(); down = {...norm(ev), t: Date.now()}; ev.preventDefault(); });
+    screen.addEventListener('pointerup', ev => {
+      const up = norm(ev); ev.preventDefault();
+      if (!down) return;
+      const dx = up.x - down.x, dy = up.y - down.y;
+      if (Math.hypot(dx, dy) < 0.015) send({type: 'tap', x: up.x, y: up.y});
+      else send({type: 'swipe', x1: down.x, y1: down.y, x2: up.x, y2: up.y, duration: Date.now() - down.t});
+      down = null;
+    });
+    screen.addEventListener('wheel', ev => { const p = norm(ev); send({type: 'wheel', x: p.x, y: p.y, deltaY: ev.deltaY}); ev.preventDefault(); }, {passive: false});
+    screen.addEventListener('keydown', ev => { send({type: 'key', key: ev.key}); ev.preventDefault(); });
+  </script>
+</body>
+</html>
+"""
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "DomADisplayGateway/1.0"
+
+    def log_message(self, fmt: str, *args: Any) -> None:
+        print("%s - %s" % (self.address_string(), fmt % args), flush=True)
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib API name
+        if self.path == "/" or self.path.startswith("/?"):
+            self.send_response(HTTPStatus.OK)
+            self.send_header("content-type", "text/html; charset=utf-8")
+            self.send_header("cache-control", "no-store")
+            self.end_headers()
+            self.wfile.write(INDEX.encode("utf-8"))
+            return
+        if self.path.startswith("/size"):
+            width, height = android_size()
+            body = json.dumps({"width": width, "height": height}).encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path.startswith("/stream"):
+            self.stream_frames()
+            return
+        self.send_error(HTTPStatus.NOT_FOUND)
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib API name
+        if self.path != "/input":
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        try:
+            length = min(int(self.headers.get("content-length", "0") or "0"), 4096)
+        except ValueError:
+            self.send_error(HTTPStatus.BAD_REQUEST, "invalid content length")
+            return
+        try:
+            event = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self.send_error(HTTPStatus.BAD_REQUEST, "invalid JSON")
+            return
+        code, text = send_input(event)
+        body = text.encode("utf-8", "replace")
+        self.send_response(code)
+        self.send_header("content-type", "text/plain; charset=utf-8")
+        self.send_header("content-length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def stream_frames(self) -> None:
+        boundary = "doma-frame"
+        self.send_response(HTTPStatus.OK)
+        self.send_header("content-type", f"multipart/x-mixed-replace; boundary={boundary}")
+        self.send_header("cache-control", "no-store")
+        self.end_headers()
+
+        while True:
+            proc = run_adb(["exec-out", "screencap", "-p"], timeout=8)
+            frame = proc.stdout
+            if proc.returncode != 0 or not frame.startswith(PNG_MAGIC):
+                time.sleep(1.0)
+                continue
+            try:
+                self.wfile.write((f"--{boundary}\r\ncontent-type: image/png\r\ncontent-length: {len(frame)}\r\n\r\n").encode("ascii"))
+                self.wfile.write(frame)
+                self.wfile.write(b"\r\n")
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                return
+            time.sleep(0.5)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=10000)
+    args = parser.parse_args()
+
+    httpd = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"serving DomA display gateway on http://{args.host}:{args.port}", flush=True)
+    httpd.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

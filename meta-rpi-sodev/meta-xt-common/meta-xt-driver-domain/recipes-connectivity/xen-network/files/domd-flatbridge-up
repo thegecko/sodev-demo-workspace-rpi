@@ -208,7 +208,7 @@ if command -v iptables >/dev/null 2>&1; then
     fi
 
     # External management name policy for wired/LAN ingress on xenbr0:
-    #   - TCP/22 and TCP/80 terminate on DomD for management.
+    #   - TCP/22, TCP/80 and TCP/10000 terminate on DomD for management.
     #   - Other TCP ports are forwarded to the Linux DomU so deployed Topo web
     #     examples can be opened through the management hostname and selected port.
     #
@@ -242,7 +242,8 @@ if command -v iptables >/dev/null 2>&1; then
     }
     add_lan_app_forward 1:21
     add_lan_app_forward 23:79
-    add_lan_app_forward 81:65535
+    add_lan_app_forward 81:9999
+    add_lan_app_forward 10001:65535
     ipt_add -t nat -A POSTROUTING -o xenbr0 -p tcp -d "$DOMU_ADDR/32" \
         -m mark --mark "$LAN_APP_MARK/0xffffffff" -j MASQUERADE
     ipt_add -A FORWARD -i xenbr0 -o xenbr0 -p tcp -d "$DOMU_ADDR" -j ACCEPT
@@ -255,9 +256,9 @@ if command -v iptables >/dev/null 2>&1; then
     ipt_add -A FORWARD -i xenbr0 -o eth1 -p tcp -s "$DOMU_ADDR" -j ACCEPT
 
     # External management name policy for Wi-Fi ingress on wlan0 mirrors Ethernet:
-    # TCP/22 and TCP/80 terminate on DomD; all other TCP ports are routed to the
-    # Linux DomU so deployed examples can be reached through the management hostname
-    # and selected port.
+    # TCP/22, TCP/80 and TCP/10000 terminate on DomD; all other TCP ports are
+    # routed to the Linux DomU so deployed examples can be reached through the
+    # management hostname and selected port.
     # DomD-originated traffic is not rewritten because this only touches PREROUTING.
     add_wifi_app_forward() {
         _range="$1"
@@ -270,7 +271,8 @@ if command -v iptables >/dev/null 2>&1; then
     }
     add_wifi_app_forward 1:21
     add_wifi_app_forward 23:79
-    add_wifi_app_forward 81:65535
+    add_wifi_app_forward 81:9999
+    add_wifi_app_forward 10001:65535
     ipt_add -t nat -A POSTROUTING -o xenbr0 -p tcp -d "$DOMU_ADDR/32" \
         -m mark --mark "$WIFI_APP_MARK/0xffffffff" -j MASQUERADE
     ipt_add -A FORWARD -i "$UPLINK_WIFI_IF" -o xenbr0 -p tcp -d "$DOMU_ADDR" -j ACCEPT
