@@ -30,6 +30,8 @@ IMAGE_INSTALL = " \
     openssh \
     openssh-sshd \
     openssh-sftp-server \
+    docker-moby \
+    util-linux-lscpu \
     domu-network \
     ${VENUS_GUEST_PACKAGES} \
     ${CORE_IMAGE_EXTRA_INSTALL} \

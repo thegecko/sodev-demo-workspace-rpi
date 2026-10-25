@@ -13,6 +13,10 @@
 log() { echo "domd-flatbridge-up: $*"; }
 
 DHCP_PID=/run/udhcpc-xenbr0.pid
+DOMU_ADDR=192.168.10.12
+DOM0_P2P_SUBNET=192.168.0.0/24
+DOMA_ADDRS="192.168.10.13 192.168.10.14 192.168.10.15"
+LAN_APP_MARK=0x12
 # Self-report progress into xenstore (readable from Dom0 as
 # /local/domain/1/data/flatbridge even when DomD console output is
 # backpressured and sshd is down -- the exact situation this instruments).
@@ -153,6 +157,16 @@ if command -v iptables >/dev/null 2>&1; then
         _net="$(printf '%s' "${_cidr%%/*}" | sed 's|\.[0-9]*$|.0|')/${_cidr##*/}"
     fi
     sysctl -qw net.ipv4.ip_forward=1 2>/dev/null || true
+    modprobe ip_tables 2>/dev/null || true
+    modprobe iptable_filter 2>/dev/null || true
+    modprobe iptable_mangle 2>/dev/null || true
+    modprobe iptable_nat 2>/dev/null || true
+    modprobe nf_conntrack 2>/dev/null || true
+    modprobe nf_nat 2>/dev/null || true
+    modprobe xt_addrtype 2>/dev/null || true
+    modprobe xt_mark 2>/dev/null || true
+    modprobe xt_tcpudp 2>/dev/null || true
+    modprobe xt_nat 2>/dev/null || true
     # ipt_add <table-args...> -- add the rule only if an identical one is absent.
     # Written as a helper so the -C/-A pair cannot drift apart, and so the exit status
     # of the whole thing is the ADD's, not a confusing `||`/`&&` precedence chain.
@@ -177,6 +191,48 @@ if command -v iptables >/dev/null 2>&1; then
         ipt_add -t nat -A POSTROUTING -s "$_net" -o "$UPLINK_WIFI_IF" -j MASQUERADE \
             && log "nat: MASQUERADE $_net -> $UPLINK_WIFI_IF"
     fi
+
+    # External management name policy for wired/LAN ingress on xenbr0:
+    #   - TCP/22 and TCP/80 terminate on DomD for management.
+    #   - Other TCP ports are forwarded to the Linux DomU so deployed Topo web
+    #     examples can be opened as http://basecamp-net:<port>/.
+    #
+    # Scope DNAT to packets that arrived from the bridge and target a local DomD
+    # address. DomD-originated traffic (including Topo's SSH to the DomU) uses the
+    # OUTPUT path, not PREROUTING, and is therefore not rewritten. Known internal
+    # guest/Dom0 sources are excluded so guest-to-DomD management/debug traffic is
+    # not accidentally looped back to the DomU.
+    add_lan_internal_returns() {
+        _table="$1"
+        _range="$2"
+        ipt_add -t "$_table" -A PREROUTING -i xenbr0 -p tcp --dport "$_range" \
+            -m addrtype --dst-type LOCAL -s "$DOMU_ADDR/32" -j RETURN
+        ipt_add -t "$_table" -A PREROUTING -i xenbr0 -p tcp --dport "$_range" \
+            -m addrtype --dst-type LOCAL -s "$DOM0_P2P_SUBNET" -j RETURN
+        for _doma in $DOMA_ADDRS; do
+            ipt_add -t "$_table" -A PREROUTING -i xenbr0 -p tcp --dport "$_range" \
+                -m addrtype --dst-type LOCAL -s "$_doma/32" -j RETURN
+        done
+    }
+    add_lan_app_forward() {
+        _range="$1"
+        add_lan_internal_returns mangle "$_range"
+        add_lan_internal_returns nat "$_range"
+        ipt_add -t mangle -A PREROUTING -i xenbr0 -p tcp --dport "$_range" \
+            -m addrtype --dst-type LOCAL \
+            -j MARK --set-xmark "$LAN_APP_MARK/0xffffffff"
+        ipt_add -t nat -A PREROUTING -i xenbr0 -p tcp --dport "$_range" \
+            -m addrtype --dst-type LOCAL \
+            -j DNAT --to-destination "$DOMU_ADDR"
+    }
+    add_lan_app_forward 1:21
+    add_lan_app_forward 23:79
+    add_lan_app_forward 81:65535
+    ipt_add -t nat -A POSTROUTING -o xenbr0 -p tcp -d "$DOMU_ADDR/32" \
+        -m mark --mark "$LAN_APP_MARK/0xffffffff" -j MASQUERADE
+    ipt_add -A FORWARD -i xenbr0 -o xenbr0 -p tcp -d "$DOMU_ADDR" -j ACCEPT
+    ipt_add -A FORWARD -i xenbr0 -o xenbr0 -p tcp -s "$DOMU_ADDR" -j ACCEPT
+
     ipt_add -I FORWARD -i xenbr0 -o "$UPLINK_WIFI_IF" -j ACCEPT
     # The stateful return rule is OPTIONAL: it needs the xt_conntrack module,
     # and the FORWARD policy is ACCEPT, so replies come back without it.
