@@ -36,8 +36,8 @@ do_compile() {
     dts="${UNPACKDIR}/bcm2712-raspberrypi5-domd-vc4.dts"
     if [ "${DOM0_OS}" = "linux" ]; then
         # Linux Dom0 is the hardware domain and OWNS the SoC SDHCI (mmc@fff000 +
-        # AON GPIO stay in Dom0), and it sets up no SCMI, so pins that only SCMI
-        # can mux stay unmuxed. Strip every SD-STRIP block: each holds nodes the
+        # AON GPIO stay in Dom0), but DomD owns the separate Wi-Fi SDIO controller
+        # and its SCMI-mediated pinmux. Strip every SD-STRIP block: each holds nodes the
         # dom0less DomD must not have in this flavour, such as a controller
         # whose IRQ Dom0 keeps (route_irq_to_guest -EBUSY), and the .dts says
         # why at the start of each block. Zephyr keeps the blocks (dtc reads the

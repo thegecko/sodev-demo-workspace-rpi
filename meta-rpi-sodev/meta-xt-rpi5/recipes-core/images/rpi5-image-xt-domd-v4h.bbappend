@@ -71,9 +71,8 @@ IMAGE_INSTALL:append = " ${DOMD_BT_PACKAGES}"
 # script marks the SDIO controller (/axi/mmc@1100000) xen,passthrough, and
 # bcm2712-raspberrypi5-domd-vc4.dts gives DomD the mmc node with its wifi@1
 # child, wl_on_reg, the shared gio bank and the sdio2 pin group that TF-A muxes
-# over SCMI. That is the zephyr Dom0 flavour: with DOM0_OS=linux the controller
-# stays with Dom0, domd-vc4.bb strips those nodes out of DomD's partial DT, and
-# the packages below are inert.
+# over SCMI. DomD owns the radio in both Dom0 flavours; with DOM0_OS=linux only
+# the SD-card controller stays in Dom0.
 #
 # No kernel rebuild. bcm2712_defconfig carries CFG80211=m, RFKILL=m, BRCMUTIL=m,
 # BRCMFMAC=m and BRCMFMAC_SDIO=y with MMC=y, so every module already exists in
@@ -133,6 +132,7 @@ DOMD_WIFI_PACKAGES:raspberrypi5 = " \
     ${DOMD_WIFI_FW} \
     wireless-regdb-static \
     wpa-supplicant \
+    xt-domd-wifi-supplicant \
     iw \
     "
 IMAGE_INSTALL:append = " ${DOMD_WIFI_PACKAGES}"

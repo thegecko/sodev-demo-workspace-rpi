@@ -22,8 +22,9 @@ PROTOCOL -- one JSON object per line, both directions:
     ->  {"t":"state","ssid":..,"state":"COMPLETED","ip":"<from the AP's DHCP>"}
 
 WPA_SUPPLICANT
-Spoken to directly over its control socket. wpa_cli is not in the DomD image and
-python3 is, so there is nothing to add. The control interface is
+Spoken to directly over its control socket. The common DomD Wi-Fi supplicant
+package also runs a wpa_cli action service for DHCP; this agent avoids starting
+its own DHCP client and only waits for that lease. The control interface is
 AF_UNIX/SOCK_DGRAM and the client must bind its own path first, which is why a
 plain connect() is not enough.
 
@@ -43,7 +44,6 @@ import argparse
 import json
 import os
 import re
-import signal
 import socket
 import subprocess
 import sys
@@ -261,34 +261,21 @@ def wait_state(sup, want="COMPLETED", secs=30):
     return last, ""
 
 
-UDHCPC_PID = "/run/domd-wifi-agent.udhcpc.pid"
-
-
-def dhcp(iface):
-    """Take a lease on iface with busybox's udhcpc, and keep it renewed.
-
-    Without -q, udhcpc forks into the background once it holds the lease and
-    renews it from there; -n makes it exit instead when no lease comes. The
-    udhcpc of the previous association is stopped first, so only one runs.
-    """
-    try:
-        with open(UDHCPC_PID) as f:
-            os.kill(int(f.read().strip()), signal.SIGTERM)
-    except (OSError, ValueError):
-        pass
-    try:
-        subprocess.run(["udhcpc", "-i", iface, "-n", "-t", "6", "-T", "3",
-                        "-p", UDHCPC_PID], timeout=60, stdin=subprocess.DEVNULL,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception as e:                                    # noqa: BLE001
-        log("dhcp on %s failed: %s" % (iface, e))
-    try:
-        out = subprocess.run(["ip", "-o", "-4", "addr", "show", iface],
-                             capture_output=True, text=True, timeout=10).stdout
-        m = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", out)
-        return m.group(1) if m else ""
-    except Exception:                                         # noqa: BLE001
-        return ""
+def wait_ip(iface, secs=30):
+    """Wait for the common DomD Wi-Fi DHCP action service to add an IPv4 lease."""
+    end = time.time() + secs
+    while time.time() < end:
+        try:
+            out = subprocess.run(["ip", "-o", "-4", "addr", "show", iface],
+                                 capture_output=True, text=True, timeout=10).stdout
+            m = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", out)
+            if m:
+                return m.group(1)
+        except Exception as e:                                # noqa: BLE001
+            log("waiting for dhcp on %s failed: %s" % (iface, e))
+            return ""
+        time.sleep(1)
+    return ""
 
 
 def parse_line(line):
@@ -431,7 +418,7 @@ def main():
             else:
                 state, ip = wait_state(sup)
                 if state == "COMPLETED" and not ip:
-                    ip = dhcp(args.iface)
+                    ip = wait_ip(args.iface)
                 reply = {"t": "state", "ssid": ssid, "state": state, "ip": ip}
             log("result: %s" % reply)
             try:
