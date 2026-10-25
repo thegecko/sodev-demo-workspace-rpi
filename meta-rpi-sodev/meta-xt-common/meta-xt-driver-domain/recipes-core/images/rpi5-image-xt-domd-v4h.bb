@@ -31,6 +31,10 @@ IMAGE_INSTALL:append = " \
     glmark2 \
     coreutils \
     avahi-daemon \
+    topo-bin \
+    docker-moby \
+    docker-compose \
+    ca-certificates \
     "
 
 # xt-rpi5-domain (boot-time vCPU pinning) already comes from the vc4 base above.
