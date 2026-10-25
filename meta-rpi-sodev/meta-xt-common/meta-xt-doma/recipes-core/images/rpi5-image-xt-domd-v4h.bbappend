@@ -20,5 +20,7 @@
 # the result whether or not anything in DomA reads it.
 # xt-doma-adb adds the DomD adb client and a doma-adb wrapper that targets DomA
 # over the internal Xen management network.
-IMAGE_INSTALL:append = " xt-aaos-host-services xt-xen-cfg-doma xt-doma-wifi-agent xt-doma-adb"
+# xt-doma-display-gateway serves DomA's Android display and keyboard/mouse input
+# from DomD on TCP/10000 for USB/Ethernet/Wi-Fi browser access.
+IMAGE_INSTALL:append = " xt-aaos-host-services xt-xen-cfg-doma xt-doma-wifi-agent xt-doma-adb xt-doma-display-gateway"
 do_image[depends] += " aaos-guest-binaries:do_deploy"

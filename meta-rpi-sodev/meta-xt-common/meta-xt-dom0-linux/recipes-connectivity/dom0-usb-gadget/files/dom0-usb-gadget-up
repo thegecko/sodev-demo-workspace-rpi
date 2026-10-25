@@ -11,6 +11,7 @@ DOM0_VIF_ADDR="192.168.0.1"
 DOMD_VIF_ADDR="192.168.0.11"
 DOMU_ADDR="192.168.10.12"
 DOMD_VIF="vif1.0"
+DOMA_DISPLAY_GATEWAY_PORT=10000
 DHCP_CONF="/etc/udhcpd/usb0.conf"
 DHCP_PID="/run/udhcpd-usb0.pid"
 CONFIGFS="/sys/kernel/config"
@@ -96,7 +97,7 @@ fi
 
 # USB gadget hardware is owned by Dom0, but externally visible TCP services
 # should behave like Ethernet/LAN management names:
-#   - TCP/22 and TCP/80 remain on DomD for management SSH/web.
+#   - TCP/22, TCP/80 and TCP/10000 remain on DomD for management SSH/web/AAOS display.
 #   - Other inbound TCP ports are app/demo ports and go to the Linux DomU.
 #
 # DNAT is scoped to packets arriving from usb0 only, so Dom0/DomD/DomU internal
@@ -127,13 +128,17 @@ if command -v iptables >/dev/null 2>&1; then
         -j DNAT --to-destination "${DOMD_VIF_ADDR}"
     ipt_add -t nat -A PREROUTING -i usb0 -p tcp --dport 80 \
         -j DNAT --to-destination "${DOMD_VIF_ADDR}"
+    ipt_add -t nat -A PREROUTING -i usb0 -p tcp --dport "${DOMA_DISPLAY_GATEWAY_PORT}" \
+        -j DNAT --to-destination "${DOMD_VIF_ADDR}"
 
     # Everything else TCP is treated as a deployed web/app port on the Linux DomU.
     ipt_add -t nat -A PREROUTING -i usb0 -p tcp --dport 1:21 \
         -j DNAT --to-destination "${DOMU_ADDR}"
     ipt_add -t nat -A PREROUTING -i usb0 -p tcp --dport 23:79 \
         -j DNAT --to-destination "${DOMU_ADDR}"
-    ipt_add -t nat -A PREROUTING -i usb0 -p tcp --dport 81:65535 \
+    ipt_add -t nat -A PREROUTING -i usb0 -p tcp --dport 81:9999 \
+        -j DNAT --to-destination "${DOMU_ADDR}"
+    ipt_add -t nat -A PREROUTING -i usb0 -p tcp --dport 10001:65535 \
         -j DNAT --to-destination "${DOMU_ADDR}"
 
     ipt_add -t nat -A POSTROUTING -s "${USB_NET}" -d "${DOMD_VIF_ADDR}/32" -p tcp \
