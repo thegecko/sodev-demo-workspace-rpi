@@ -161,6 +161,12 @@ DOMD_RUNTIME_PACKAGES = " \
     libglvnd \
 "
 
+# In the Linux-Dom0 flavour this p2 image is the merged management Dom0 rootfs,
+# not a non-control DomD. Add the Dom0-only pieces that used to live in the thin
+# initramfs: USB gadget management and the xen daemons/control tools that must run
+# in the hardware domain.
+MERGED_DOM0_PACKAGES = "${@bb.utils.contains('DOM0_OS', 'linux', 'dom0-usb-gadget xen-tools-xl xen-tools-xenstored xen-tools-xenconsoled', '', d)}"
+
 # The DomU xl config is only installed when the DomU is actually built: the moulin
 # domd conf sets XT_DOMU_CFG_INSTALL="xt-xen-cfg-domu" for ENABLE_DOMU=yes and ""
 # otherwise, so a guest-less build does not pull an unbuildable provider.
@@ -182,6 +188,7 @@ IMAGE_INSTALL:append = " \
     ${KMOD_PACKAGES} \
     ${DEBUG_PACKAGES} \
     ${DOMD_RUNTIME_PACKAGES} \
+    ${MERGED_DOM0_PACKAGES} \
     ${XT_DOMU_CFG_INSTALL} \
     ${XT_DOMZ_CFG_INSTALL} \
     ${VENUS_PACKAGES} \
@@ -449,22 +456,28 @@ Environment="SDL_VIDEODRIVER=wayland"
 Environment="V3D_DEBUG=db"
 EOF
 
-    # 7. Mask services that must not run on DomD.
+    # 7. Mask services that must not run on a non-control DomD.
     # xen-init-dom0.service      : skipped by its own control_d check (no mask needed)
     # xen-init-dom0less.service  : dom0less xenstore tree init = Dom0 only
     # xen-qemu-dom0-disk-backend : Dom0 qemu disk backend = Dom0 only
-    ln -sf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/xen-init-dom0less.service
-    ln -sf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/xen-qemu-dom0-disk-backend.service
-    # The xenstore SERVER is Dom0 (Zephyr zephyr-xenlib xenstore_srv, or the thin
-    # Linux Dom0's xenstored). DomD must be a xenstore CLIENT (xenbus via STORE_PFN)
-    # and must never run its own daemon: its xenstored.service is gated on
-    # `grep control_d /proc/xen/capabilities` and fails today on the non-control
-    # DomD, but once the dom0less DomD is granted control caps it would START and
-    # DOUBLE the xenstore -> corruption. xenconsoled is likewise a Dom0-role daemon
-    # (Requires=xenstored). Mask both; the xenstore CLIENT CLI (xen-tools-xenstore)
-    # and xendriverdomain (`xl devd`) stay enabled.
-    ln -sf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/xenstored.service
-    ln -sf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/xenconsoled.service
+    if [ "${DOM0_OS}" = "linux" ]; then
+        # Merged topology: this rootfs boots as the hardware/control domain, so it
+        # must run xenstored/xenconsoled and must not carry those masks from the
+        # old non-control DomD role. There is no dom0less DomD any more, and the
+        # qdisk backend remains unnecessary/noisy, so keep those masked.
+        rm -f ${IMAGE_ROOTFS}/etc/systemd/system/xenstored.service
+        rm -f ${IMAGE_ROOTFS}/etc/systemd/system/xenconsoled.service
+        ln -sf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/xen-init-dom0less.service
+        ln -sf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/xen-qemu-dom0-disk-backend.service
+    else
+        ln -sf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/xen-init-dom0less.service
+        ln -sf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/xen-qemu-dom0-disk-backend.service
+        # The xenstore SERVER is Dom0 (Zephyr zephyr-xenlib xenstore_srv). DomD
+        # must be a xenstore CLIENT and must never run its own daemon. xenconsoled
+        # is likewise a Dom0-role daemon. Mask both in the split topology.
+        ln -sf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/xenstored.service
+        ln -sf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/xenconsoled.service
+    fi
     # NB: getty@tty1 / getty@tty7 are deliberately NOT masked here. The stock
     # weston.service owns its VT properly (TTYPath=/dev/tty7 with TTYReset /
     # TTYVHangup / TTYVTDisallocate), so there is nothing to arbitrate: masking is
@@ -494,8 +507,14 @@ EOF
     install -d ${IMAGE_ROOTFS}/etc/systemd/system/getty.target.wants
     rm -f ${IMAGE_ROOTFS}/etc/systemd/system/getty.target.wants/serial-getty@hvc0.service
     rm -f ${IMAGE_ROOTFS}/etc/systemd/system/getty.target.wants/serial-getty@ttyAMA10.service
-    ln -sf /lib/systemd/system/serial-getty@.service \
-        ${IMAGE_ROOTFS}/etc/systemd/system/getty.target.wants/serial-getty@ttyAMA0.service
+    rm -f ${IMAGE_ROOTFS}/etc/systemd/system/getty.target.wants/serial-getty@ttyAMA0.service
+    if [ "${DOM0_OS}" = "linux" ]; then
+        ln -sf /lib/systemd/system/serial-getty@.service \
+            ${IMAGE_ROOTFS}/etc/systemd/system/getty.target.wants/serial-getty@hvc0.service
+    else
+        ln -sf /lib/systemd/system/serial-getty@.service \
+            ${IMAGE_ROOTFS}/etc/systemd/system/getty.target.wants/serial-getty@ttyAMA0.service
+    fi
 
     # 9. sshd config + privsep directories. Host keys are NOT shipped (a community
     # repo must not contain private keys); `ssh-keygen -A` in domd-sshd-fix.service
@@ -507,24 +526,10 @@ EOF
 
 }
 
-# In the thin-Linux flavour the toolstack is DOM0's, not DomD's: Dom0 runs xenstored,
-# attaches the guest disks (xl-attach-disks.service) and creates DomU/DomA itself. The
-# three DomD-side units below therefore have no job, and leaving them enabled is not
-# harmless in either direction:
-#
-#   * domd-toolstack-prep seeds a Zephyr xenstore that does not exist here. Measured on
-#     hardware 2026-08-03: it failed, was restarted five times, then gave up
-#     ("Start request repeated too quickly"), filling the Xen console with
-#     `(XEN) DOM1: [FAILED] Failed to start DomD toolstack preparation for the
-#     Zephyr-Dom0 topology` and `[DEPEND] Dependency failed for Launch DomU/DomA`.
-#   * the DEPEND failures are what kept DomD's own xl-create-{domu,doma} from running,
-#     which is the ONLY reason the boot came up correctly. Satisfying the requirement
-#     instead -- e.g. with the no-op stub meta-xt-dom0-linux ships into the DOM0 rootfs
-#     for exactly this reason -- would let DomD race Dom0 to create the same domains.
-#
-# So mask all three rather than stub them: masked units neither fail nor run. The units
-# stay installed (the image content is flavour-independent); only the enablement changes,
-# which is the same approach used for the serial-getty units above.
+# Historical split-topology safeguard: for any non-Zephyr/non-merged flavour, mask
+# the DomD-side toolstack units so a non-control DomD cannot try to create guests.
+# Zephyr keeps the real DomD toolstack prep; merged Linux Dom0 replaces it below
+# with a no-op dependency satisfier and runs the guest create units locally.
 # Which Dom0 the image is being built alongside. The default MUST match the moulin
 # default: without it an unset DOM0_OS expands to the empty string, which is not
 # "zephyr", and the masks below would fire on a standalone `bitbake
@@ -534,7 +539,7 @@ DOM0_OS ??= "zephyr"
 
 ROOTFS_POSTPROCESS_COMMAND += "mask_zephyr_toolstack_units; "
 mask_zephyr_toolstack_units() {
-    if [ "${DOM0_OS}" = "zephyr" ]; then
+    if [ "${DOM0_OS}" = "zephyr" ] || [ "${DOM0_OS}" = "linux" ]; then
         return
     fi
     install -d ${IMAGE_ROOTFS}/etc/systemd/system
@@ -547,6 +552,61 @@ mask_zephyr_toolstack_units() {
             bbnote "masked $u (DOM0_OS=${DOM0_OS}: Dom0 owns the toolstack)"
         fi
     done
+}
+
+ROOTFS_POSTPROCESS_COMMAND += "configure_merged_linux_dom0_rootfs; "
+configure_merged_linux_dom0_rootfs() {
+    if [ "${DOM0_OS}" != "linux" ]; then
+        return
+    fi
+
+    # This p2 image is now the hardware/control domain rootfs. Replace the
+    # Zephyr-Dom0-specific DomD seeder with a no-op unit that only satisfies the
+    # shared xl-create-* Requires=domd-toolstack-prep.service dependency.
+    cat > ${IMAGE_ROOTFS}${systemd_system_unitdir}/domd-toolstack-prep.service <<'EOF'
+[Unit]
+Description=No-op toolstack prep for merged Linux Dom0
+ConditionPathExists=/proc/xen
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    install -d ${IMAGE_ROOTFS}${systemd_system_unitdir}/xl-create-doma.service.d
+    cat > ${IMAGE_ROOTFS}${systemd_system_unitdir}/xl-create-doma.service.d/10-merged-dom0.conf <<'EOF'
+[Unit]
+Requires=xenstored.service
+After=xenstored.service
+EOF
+    install -d ${IMAGE_ROOTFS}${systemd_system_unitdir}/xl-create-domu.service.d
+    cat > ${IMAGE_ROOTFS}${systemd_system_unitdir}/xl-create-domu.service.d/10-merged-dom0.conf <<'EOF'
+[Unit]
+Requires=xenstored.service
+After=xenstored.service
+EOF
+
+    # The former DomD ran as domid 1. In the merged topology the qemu/virtio
+    # backends are local to Dom0, so libxl must use backend domid 0. Likewise the
+    # weston readiness xenstore node is written under /local/domain/0.
+    if [ -f ${IMAGE_ROOTFS}${sysconfdir}/xen/doma.cfg ]; then
+        sed -i 's|backend=1,|backend=0,|g' ${IMAGE_ROOTFS}${sysconfdir}/xen/doma.cfg
+    fi
+    if [ -f ${IMAGE_ROOTFS}${sysconfdir}/xen/domu.cfg ]; then
+        sed -i 's|backend=1,|backend=0,|g' ${IMAGE_ROOTFS}${sysconfdir}/xen/domu.cfg
+    fi
+    if [ -f ${IMAGE_ROOTFS}${systemd_system_unitdir}/xl-create-doma.service ]; then
+        sed -i 's|/local/domain/1/drivers/weston-up/status|/local/domain/0/drivers/weston-up/status|g' \
+            ${IMAGE_ROOTFS}${systemd_system_unitdir}/xl-create-doma.service
+    fi
+    if [ -f ${IMAGE_ROOTFS}${systemd_system_unitdir}/xl-create-domu.service ]; then
+        sed -i 's|/local/domain/1/drivers/weston-up/status|/local/domain/0/drivers/weston-up/status|g' \
+            ${IMAGE_ROOTFS}${systemd_system_unitdir}/xl-create-domu.service
+    fi
 }
 
 # The masks above are DOM0_OS-dependent, so a flavour switch must not reuse a rootfs

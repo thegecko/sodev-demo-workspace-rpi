@@ -1,5 +1,5 @@
 SUMMARY = "Dom0 USB-C ConfigFS Ethernet gadget management interface"
-DESCRIPTION = "Creates a CDC ECM USB Ethernet gadget in Linux Dom0, serves DHCP/mDNS to the USB host, and forwards inbound USB TCP services to DomD."
+DESCRIPTION = "Creates a CDC ECM USB Ethernet gadget in Linux Dom0, serves DHCP/mDNS to the USB host, and forwards inbound app/demo TCP services to the Linux DomU."
 LICENSE = "Apache-2.0"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/Apache-2.0;md5=89aea4e17d99a7cacdbeed46a0096b10"
 PV = "1.0"
@@ -12,11 +12,15 @@ SRC_URI = " \
 "
 S = "${UNPACKDIR}"
 
+require recipes-connectivity/sodev-net.inc
+
 inherit systemd
 
 do_install() {
     install -d ${D}${bindir}
     install -m 0755 ${UNPACKDIR}/dom0-usb-gadget-up ${D}${bindir}/dom0-usb-gadget-up
+    sed -i 's|@XT_DOMU_IP@|${XT_DOMU_IP}|g' ${D}${bindir}/dom0-usb-gadget-up
+    sed -i 's|@XT_DOMD_XENBR0_IP@|${XT_DOMD_XENBR0_IP}|g' ${D}${bindir}/dom0-usb-gadget-up
 
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/dom0-usb-gadget.service ${D}${systemd_system_unitdir}/dom0-usb-gadget.service

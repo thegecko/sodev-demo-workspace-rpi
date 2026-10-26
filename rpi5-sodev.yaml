@@ -7,7 +7,7 @@
 # normalises the board-specific tokens and fails on any functional line that differs
 # outside its recorded baseline. Run it after touching either file.
 #
-desc: "Raspberry Pi 5 + Xen 4.22 — AGL SoDeV disaggregated cockpit (Zephyr or thin-Linux Dom0)"
+desc: "Raspberry Pi 5 + Xen 4.22 — AGL SoDeV merged Linux management Dom0"
 
 # Combining model (moulin has NO cross-file include):
 #   Dom0/DomD : rpi5 base. Component bodies live in the external/meta-xt-prod-devel-rpi5
@@ -30,7 +30,7 @@ variables:
   # (meta-xt-rpi5/recipes-bsp/trusted-firmware-a/trusted-firmware-a_git.bb). The
   # firmware applies overlays/bcm2712d0.dtbo, a p1 boot item below, on D0 boards
   # only and ignores it on C0.
-  DOM0_OS: "zephyr"          # default zephyr; overridable: --DOM0_OS {zephyr|linux}
+  DOM0_OS: "linux"           # merged management Dom0; overridable: --DOM0_OS {zephyr|linux}
   BOARD_RAM: "16g"           # default 16g (16 GB board); overridable: --BOARD_RAM {16g|8g}
 
   # --- Zephyr Dom0 (main branch policy, copied from rpi5.yaml) ---
@@ -296,19 +296,19 @@ parameters:
   # component is empty (sources: [] / builder: {} / placeholder build-dir), so exactly
   # one variant's disjoint body is merged in (moulin overrides append to sequences /
   # add-or-replace mapping keys, so an empty base + full-body variant is unambiguous).
-  #   zephyr (DEFAULT) = upstream/main policy: west source + zephyr builder, board
+  #   zephyr           = upstream/main policy: west source + zephyr builder, board
   #     rpi_5, XEN_DOMCTL_INTERFACE_VERSION 0x18 (our Xen 4.22). Boot loads
   #     zephyr.bin as dom0. Requires meta-rpi-sodev/meta-xt-common/meta-xt-dom0-zephyr/apply-zephyr-patches.sh after
   #     `west update` (moulin has no apply_patch hook). See rpi5-sodev.yaml (--DOM0_OS zephyr).
-  #   linux            = our verified thin control domain: git source + yocto builder,
-  #     rpi5-image-xt-dom0-thin. Boot loads the dom0-thin initramfs cpio.gz.
+  #   linux (DEFAULT) = merged Linux management/driver Dom0. p2 is mounted as
+  #     Dom0's rootfs; the legacy dom0-thin artifact may still be staged for
+  #     component compatibility but is not loaded by boot.scr.
   # NOTE: the variant bodies use the *COMMON_YOCTO_SOURCES / *LINUX_DOMAIN_CONF /
   # *COMMON_YOCTO_LAYERS anchors (defined in common_data), so this whole `parameters`
   # block is placed AFTER common_data (YAML aliases must follow their anchor).
   DOM0_OS:
-    desc: "Dom0 OS: zephyr (xenstore-only disaggregated Dom0, pinned rpi5-v0.4.0) or linux (thin Linux control Dom0)"
+    desc: "Dom0 OS: linux merged management/driver Dom0, or zephyr xenstore-only disaggregated Dom0"
     zephyr:
-      default: true
       overrides:
         variables:
           DOM0_OS: "zephyr"
@@ -381,6 +381,7 @@ parameters:
                   # [Zephyr Dom0] load zephyr.bin as dom0 (boot.scr selects it).
                   "zephyr.bin": "%{ZEPHYR_DOM0_DIR}/%{ZEPHYR_DOM0_BUILD_DIR}/zephyr/zephyr.bin"
     linux:
+      default: true
       overrides:
         variables:
           DOM0_OS: "linux"
@@ -401,7 +402,8 @@ parameters:
           # XT_DOMA_HWDEC in the GPU parameter).
           XT_DOMA_HWDEC_VULKAN: "false"
         components:
-          # Linux thin control domain body (the former base dom0 body).
+          # Linux Dom0 component body. In the merged default this legacy component
+          # is retained for moulin compatibility; boot.scr mounts p2 instead.
           dom0:
             build-dir: "%{YOCTOS_WORK_DIR}"
             sources:
@@ -554,62 +556,26 @@ parameters:
             partitions:
               boot:
                 items:
-                  # [Linux Dom0] the dom0-thin initramfs (rootfs) loaded as dom0.
+                  # [Linux Dom0 legacy] staged for component compatibility; merged boot.scr ignores it and mounts p2.
                   "initramfs-xt-dom0-thin.cpio.gz": "%{YOCTOS_WORK_DIR}/%{DOM0_BUILD_DIR}/tmp/deploy/images/%{MACHINE}/rpi5-image-xt-dom0-thin-%{MACHINE}.rootfs.cpio.gz"
 
   # ---------------------------------------------------------------------------
   # BOARD_RAM — which Raspberry Pi 5 SKU the image is for.
   # ---------------------------------------------------------------------------
-  # The default domain map is sized for the 16 GB board, which the firmware reports
-  # as total_memory=16372 (the figure recorded in
-  # meta-xt-rpi5/recipes-kernel/linux/files/bcm2712-raspberrypi5-xen.dtso):
-  #   16g: Dom0  512 + DomD 4096 + DomU 1024 + DomA 4096 =  9728 MiB (+ Xen ~64)
-  # DomD's static-mem banks reach 0x1c0000000 (7 GiB), so on an 8 GB board every
-  # ADDRESS in the map still exists -- it is the TOTAL that does not fit. 8g takes the
-  # reduction out of DomD and DomA and leaves Dom0/DomU at their verified sizes:
-  #    8g: Dom0  512 + DomD 3072 + DomU 1024 + DomA 3072 =  7680 MiB
-  #        The reduction is SPLIT rather than taken from DomD alone: DomD 2048 is the
-  #        size the overlay records as having OOM-killed `xl devd` with both guests'
-  #        qemu device-models + weston + the VHAL backend running, which is why 16g
-  #        uses 4096. 3072/3072 keeps DomD clear of that figure and still fits.
-  #        (static-mem: bank4 at 0x180000000 dropped, bank3 at 0x100000000 2G -> 1G,
-  #         and the boot script sets /chosen/domD memory = <0x0 0x300000> = 3072 MiB;
-  #         the three low banks are kept because bank[0]=0x50000000 is where
-  #         place_modules() puts the DomD kernel/DTB and 0x20000000/0x80000000 are
-  #         inside the VPU 32-bit DMA window that carries vc4's CMA.
-  #         DomA's 3072 comes from doma.cfg, which xt-xen-cfg-doma substitutes per
-  #         BOARD_RAM: 16g -> 4096, 8g -> 3072.)
+  # In the merged Linux-Dom0 default, BOARD_RAM selects both the merged Dom0 memory
+  # size in boot.scr and DomA's memory in doma.cfg:
+  #   16g: Dom0 4096 + DomU 1024 + DomA 4096 = 9216 MiB (+ Xen)
+  #    8g: Dom0 3072 + DomU 1024 + DomA 3072 = 7168 MiB (+ Xen)
+  # The p2 rootfs now carries the former DomD management/driver workload, so the old
+  # 512M thin-Dom0 sizing is not used in this default path. The Zephyr split topology
+  # remains selectable with --DOM0_OS zephyr.
   #
-  # 7680 + Xen ~64 = 7744 MiB against roughly 8180 MiB usable (extrapolated from
-  # total_memory=16372 = 16384 - 12), i.e. ~436 MiB of headroom. build.sh prints this
-  # arithmetic when --ram=8g is combined with DomA, because the 8180 figure is
-  # EXTRAPOLATED -- no 8 GB Pi 5 has been measured here.
-  # The margin exists only because Dom0 is 512M: at 1024M the same four domains came
-  # to 8256 MiB and over-committed the board.
-  #
-  # Dom0 is NOT board-dependent -- dom0_mem=512M on both SKUs -- but the VALUE still
-  # decides WHERE bank[0] lands (allocate_memory_11 is not DT-pinnable), and Zephyr's
-  # SRAM base is relinked to that address (0xa0000000 at 512M, MEASURED on hardware
-  # 2026-08-03: BANK[0] 0xa0000000-0xc0000000) in
-  # meta-xt-dom0-zephyr/0008-rpi5-board-domd-owns-sd.patch. Changing dom0_mem means
-  # changing that patch too; tools/check-memory-map.py enforces the pair.
-  # (An earlier revision of this comment said 0xe0000000, which contradicted 0008's own
-  # measurement. Do NOT replace it with a rule: which candidate wins inside one
-  # MEMF_bits tier is not predictable, and it is not the same for both flavours --
-  # zephyr/512M measured 0xa0000000, the lowest of three candidates, while linux/512M
-  # measured 0xe0000000, the highest of two. tools/check-memory-map.py says exactly
-  # that and pins both measurements in DOM0_BANK0_MEASURED; read BANK[0] from the Xen
-  # console rather than deriving it.)
-  #
-  # Mechanism: this only sets BOARD_RAM in the domd conf (the DomD build is what
-  # produces boot.scr). Both boot scripts carry `setenv board_ram <value>`
-  # (substituted by the xt-rpi-u-boot-scr bbappend) and branch on it at run time with
-  # `fdt set /chosen/domD memory|xen,static-mem`, so the 8 GiB delta is two lines in
-  # each script rather than a second overlay or a second script.
-  # tools/check-memory-map.py validates BOTH values against Xen's
-  # allocate_memory_11() placement and the boot scripts' load addresses.
+  # Mechanism: this sets BOARD_RAM in the p2/domain build (which produces boot.scr)
+  # and in the configs that substitute DomA memory. The RPi5 Linux-Dom0 boot script
+  # branches on the substituted value with `setenv merged_dom0_mem ...`;
+  # xt-xen-cfg-doma substitutes DomA's `memory` from the same BOARD_RAM value.
   BOARD_RAM:
-    desc: "Target Raspberry Pi 5 SKU: 16g (default; full 4-domain cockpit) or 8g (DomD and DomA 3072 MiB each; the four domains then total 7680 MiB and fit an 8 GB board -- see the comment above)"
+    desc: "Target Raspberry Pi 5 SKU: 16g (default) or 8g (merged Dom0 and DomA use 3072 MiB each -- see the comment above)"
     "16g":
       default: true
       overrides:
@@ -1132,8 +1098,8 @@ components:
   # Dom0 / DomD — RPi5 base, copied verbatim from external/meta-xt-prod-devel-rpi5/rpi5.yaml.
   # =========================================================================
   # Dom0 has two variants (the Linux Dom0 deviates from the RPi5 upstream policy):
-  #   zephyr = Zephyr thin Dom0 (the RPi5 upstream policy, and the default here)
-  #   linux  = thin Linux control domain (the alternative flavour)
+  #   linux  = merged Linux management/driver Dom0 (default here)
+  #   zephyr = Zephyr thin Dom0 (the RPi5 upstream split-topology policy)
   # rpi5-image-xt-dom0-thin is NOT in upstream rpi5.yaml (built manually in a standalone
   # bitbake build); MACHINE=raspberrypi5 and the layer set below are taken verbatim from
   # that verified bblayers. Layer paths remapped to the meta-xt-prod-devel-rpi5 submodule.
@@ -1144,7 +1110,7 @@ components:
   # scalar builder-type or delete keys. `build-dir` is a placeholder scalar (a variant
   # replaces it via scalar-override); `sources: []` / `builder: {}` are empty so a
   # variant's full sources-sequence / builder-mapping merge cleanly onto them. DOM0_OS
-  # defaults to zephyr; --DOM0_OS linux selects the Linux thin control domain instead.
+  # defaults to linux; --DOM0_OS zephyr selects the split Zephyr topology instead.
   # `default: true` is kept here so the dom0 component is in the default build graph.
   dom0:
     default: true

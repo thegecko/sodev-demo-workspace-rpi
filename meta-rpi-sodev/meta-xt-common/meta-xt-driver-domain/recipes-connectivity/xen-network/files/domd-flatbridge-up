@@ -14,15 +14,16 @@ log() { echo "domd-flatbridge-up: $*"; }
 
 DHCP_PID=/run/udhcpc-xenbr0.pid
 DOMD_XENBR0_ADDR=@XT_DOMD_XENBR0_IP@/24
-DOMU_ADDR=192.168.10.12
+DOMU_ADDR=@XT_DOMU_IP@
 DOM0_P2P_SUBNET=192.168.0.0/24
-DOMA_ADDRS="192.168.10.13 192.168.10.14 192.168.10.15"
+DOMA_ADDRS="@XT_DOMA_IP@ @XT_DOMA_ETH0_IP@ @XT_DOMA_WLAN0_IP@"
 LAN_APP_MARK=0x12
 WIFI_APP_MARK=0x13
-# Self-report progress into xenstore (readable from Dom0 as
-# /local/domain/1/data/flatbridge even when DomD console output is
-# backpressured and sshd is down -- the exact situation this instruments).
-XSKEY=/local/domain/1/data/flatbridge
+# Self-report progress into the current domain's xenstore tree. In the split
+# topology this is DomD; in the merged topology it is Dom0.
+SELF_DOMID=$(xenstore-read domid 2>/dev/null || echo 0)
+[ -n "$SELF_DOMID" ] || SELF_DOMID=0
+XSKEY=/local/domain/$SELF_DOMID/data/flatbridge
 xsr() { xenstore-write "$XSKEY" "$(xenstore-read "$XSKEY" 2>/dev/null);$*" 2>/dev/null || true; }
 xenstore-write "$XSKEY" "start uptime=$(cut -d. -f1 /proc/uptime)" 2>/dev/null || true
 # Wait for the first guest tap to appear. multi-user.target fires much earlier
@@ -199,12 +200,12 @@ if command -v iptables >/dev/null 2>&1; then
     fi
 
     # External management name policy for wired/LAN ingress on xenbr0:
-    #   - TCP/22, TCP/80 and TCP/10000 terminate on DomD for management.
+    #   - TCP/22, TCP/80 and TCP/10000 terminate on the management host.
     #   - Other TCP ports are forwarded to the Linux DomU so deployed Topo web
     #     examples can be opened through the management hostname and selected port.
     #
-    # Scope DNAT to packets that arrived from the bridge and target a local DomD
-    # address. DomD-originated traffic (including Topo's SSH to the DomU) uses the
+    # Scope DNAT to packets that arrived from the bridge and target a local host
+    # address. Host-originated traffic (including Topo's SSH to the DomU) uses the
     # OUTPUT path, not PREROUTING, and is therefore not rewritten. Known internal
     # guest/Dom0 sources are excluded so guest-to-DomD management/debug traffic is
     # not accidentally looped back to the DomU.
@@ -241,10 +242,10 @@ if command -v iptables >/dev/null 2>&1; then
     ipt_add -A FORWARD -i xenbr0 -o xenbr0 -p tcp -s "$DOMU_ADDR" -j ACCEPT
 
     # External management name policy for Wi-Fi ingress on wlan0 mirrors Ethernet:
-    # TCP/22, TCP/80 and TCP/10000 terminate on DomD; all other TCP ports are
+    # TCP/22, TCP/80 and TCP/10000 terminate on the management host; all other TCP ports are
     # routed to the Linux DomU so deployed examples can be reached through the
     # management hostname and selected port.
-    # DomD-originated traffic is not rewritten because this only touches PREROUTING.
+    # Host-originated traffic is not rewritten because this only touches PREROUTING.
     add_wifi_app_forward() {
         _range="$1"
         ipt_add -t mangle -A PREROUTING -i "$UPLINK_WIFI_IF" -p tcp --dport "$_range" \

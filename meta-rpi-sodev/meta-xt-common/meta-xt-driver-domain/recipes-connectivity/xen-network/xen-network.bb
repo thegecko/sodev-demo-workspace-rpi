@@ -145,6 +145,14 @@ do_install() {
     install -m 0755 ${S}/domd-flatbridge-up ${D}${bindir}/domd-flatbridge-up
     sed -i 's|@XT_DOMD_XENBR0_IP@|${XT_DOMD_XENBR0_IP}|g' \
         ${D}${bindir}/domd-flatbridge-up
+    sed -i 's|@XT_DOMU_IP@|${XT_DOMU_IP}|g' \
+        ${D}${bindir}/domd-flatbridge-up
+    sed -i 's|@XT_DOMA_IP@|${XT_DOMA_IP}|g' \
+        ${D}${bindir}/domd-flatbridge-up
+    sed -i 's|@XT_DOMA_ETH0_IP@|${XT_DOMA_ETH0_IP}|g' \
+        ${D}${bindir}/domd-flatbridge-up
+    sed -i 's|@XT_DOMA_WLAN0_IP@|${XT_DOMA_WLAN0_IP}|g' \
+        ${D}${bindir}/domd-flatbridge-up
     sed -i 's|@SODEV_MANAGEMENT_HOSTNAME@|${SODEV_NET_MANAGEMENT_HOSTNAME}|g' \
         ${D}${bindir}/domd-flatbridge-up
 }
