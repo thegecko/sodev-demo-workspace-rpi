@@ -1,5 +1,5 @@
-SUMMARY = "Dom0 USB-C ConfigFS Ethernet gadget management interface"
-DESCRIPTION = "Creates a CDC ECM USB Ethernet gadget in Linux Dom0, serves DHCP/mDNS to the USB host, and forwards inbound USB TCP services to DomD."
+SUMMARY = "Dom0 USB-C ConfigFS management gadget"
+DESCRIPTION = "Creates CDC ECM USB Ethernet plus ACM serial console functions in Linux Dom0, serves DHCP/mDNS to the USB host, and forwards inbound USB TCP services to DomD."
 LICENSE = "Apache-2.0"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/Apache-2.0;md5=89aea4e17d99a7cacdbeed46a0096b10"
 PV = "1.0"
@@ -53,6 +53,8 @@ RDEPENDS:${PN} = " \
     kernel-module-xt-tcpudp \
     kernel-module-libcomposite \
     kernel-module-u-ether \
+    kernel-module-u-serial \
     kernel-module-usb-f-ecm \
     kernel-module-usb-f-ncm \
+    kernel-module-usb-f-acm \
 "

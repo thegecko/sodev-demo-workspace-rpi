@@ -47,6 +47,26 @@ do_compile() {
         strip="${B}/bcm2712-raspberrypi5-domd-vc4-linux.dts"
         sed '/SODEV-LINUX-DOM0-SD-STRIP-BEGIN/,/SODEV-LINUX-DOM0-SD-STRIP-END/d' \
             "$dts" > "$strip"
+        # The live Linux-Dom0 image showed boot-time xHCI command errors until the
+        # RP1 DWC3 host quirks from bcm2712-raspberrypi5-usb.dtso were present in
+        # DomD's partial DT. Add them only to the Linux-Dom0 generated DT here so
+        # this fix does not alter the unused Dom0 flavours' pristine DTB.
+        awk '
+            /usb3-lpm-capable;/ {
+                print;
+                print "\t\t\t\t\t\tsnps,axi-pipe-limit = [08];";
+                print "\t\t\t\t\t\tsnps,dis_rxdet_inp3_quirk;";
+                print "\t\t\t\t\t\tsnps,enhanced-nak-fs-quirk;";
+                print "\t\t\t\t\t\tsnps,parkmode-disable-ss-quirk;";
+                print "\t\t\t\t\t\tsnps,parkmode-disable-hs-quirk;";
+                print "\t\t\t\t\t\tsnps,parkmode-disable-fsls-quirk;";
+                print "\t\t\t\t\t\tsnps,tx-max-burst-prd = <0x08>;";
+                print "\t\t\t\t\t\tsnps,tx-thr-num-pkt-prd = <0x02>;";
+                next;
+            }
+            { print }
+        ' "$strip" > "${strip}.dwc3"
+        mv "${strip}.dwc3" "$strip"
         # Self-validate the strip: if the BEGIN/END markers are ever renamed or removed
         # by a future .dts edit, sed silently passes the file through unchanged and the
         # Linux DomD would claim the SoC mmc IRQ (SPI273) + AON GPIO that Dom0-Linux owns
