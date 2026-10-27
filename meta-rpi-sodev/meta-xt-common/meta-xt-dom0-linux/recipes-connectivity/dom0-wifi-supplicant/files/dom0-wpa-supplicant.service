@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: MIT
+[Unit]
+Description=wpa_supplicant on Linux Dom0's real Wi-Fi radio
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+TimeoutStartSec=infinity
+ExecStartPre=/bin/sh -c 'while [ ! -e /sys/class/net/wlan0 ]; do sleep 0.5; done'
+ExecStart=/usr/sbin/wpa_supplicant -i wlan0 -c /etc/wpa_supplicant-wlan0.conf
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

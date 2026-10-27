@@ -38,14 +38,15 @@ S = "${UNPACKDIR}"
 
 inherit systemd
 
-# The supplicant/control-socket setup is provided by xt-domd-wifi-supplicant.
-# This package only adds the optional DomA shadow-AP relay agent.
+# The supplicant/control-socket setup is provided by xt-domd-wifi-supplicant when
+# DomD owns the real radio. DOM0_OS=linux keeps the radio in Dom0 and image
+# packaging avoids this agent entirely.
 SYSTEMD_SERVICE:${PN} = "domd-wifi-agent.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # python3 for the agent, with python3-io for its socket module; the common DomD
 # supplicant package owns wpa_supplicant and the wlan0 DHCP action service.
-RDEPENDS:${PN} = "python3-core python3-io python3-json xt-domd-wifi-supplicant"
+RDEPENDS:${PN} = "python3-core python3-io python3-json ${@'' if d.getVar('DOM0_OS') == 'linux' else 'xt-domd-wifi-supplicant'}"
 
 do_install() {
     install -d ${D}${bindir}

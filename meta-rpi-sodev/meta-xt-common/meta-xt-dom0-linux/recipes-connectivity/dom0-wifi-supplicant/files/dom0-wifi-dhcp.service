@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: MIT
+[Unit]
+Description=DHCP on Linux Dom0 Wi-Fi after wpa_supplicant association
+Requires=dom0-wpa-supplicant.service
+After=dom0-wpa-supplicant.service
+StartLimitIntervalSec=0
+
+[Service]
+TimeoutStartSec=infinity
+ExecStartPre=/bin/sh -c 'while [ ! -S /run/wpa_supplicant/wlan0 ]; do sleep 0.5; done'
+ExecStart=/usr/sbin/wpa_cli -p /run/wpa_supplicant -i wlan0 -a /usr/libexec/dom0-wifi-dhcp-action
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

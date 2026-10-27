@@ -1,0 +1,35 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+set -eu
+
+IFACE="${1:-wlan0}"
+EVENT="${2:-}"
+PIDFILE="/run/udhcpc-${IFACE}.pid"
+HOSTNAME="$(cat /etc/hostname 2>/dev/null || echo raspberrypi5-dom0)"
+
+log() { echo "dom0-wifi-dhcp-action: $*"; }
+stop_udhcpc() {
+    if [ -f "$PIDFILE" ]; then
+        kill "$(cat "$PIDFILE")" 2>/dev/null || true
+        rm -f "$PIDFILE"
+    fi
+}
+
+case "$EVENT" in
+    CONNECTED)
+        stop_udhcpc
+        if command -v udhcpc >/dev/null 2>&1; then
+            udhcpc -i "$IFACE" -p "$PIDFILE" -b -R -x "hostname:${HOSTNAME}" >/dev/null 2>&1 \
+                && log "udhcpc started on $IFACE" \
+                || log "WARNING: failed to start udhcpc on $IFACE"
+        else
+            log "WARNING: udhcpc not present; $IFACE will not get DHCP"
+        fi
+        ;;
+    DISCONNECTED)
+        stop_udhcpc
+        ip addr flush dev "$IFACE" 2>/dev/null || true
+        ;;
+    *)
+        ;;
+esac

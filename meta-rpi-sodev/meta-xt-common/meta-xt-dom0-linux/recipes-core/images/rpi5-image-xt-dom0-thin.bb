@@ -56,15 +56,26 @@ IMAGE_INSTALL = " \
     xt-rpi5-domain \
     xt-linux-dom0-guests \
     dom0-domd-vif \
+    dom0-wifi-supplicant \
     kernel-module-bridge \
+    kernel-module-cfg80211 \
+    kernel-module-rfkill \
+    kernel-module-brcmutil \
+    kernel-module-brcmfmac \
+    kernel-module-brcmfmac-cyw \
+    kernel-module-brcmfmac-bca \
+    kernel-module-brcmfmac-wcc \
+    linux-firmware-rpidistro-bcm43455 \
+    wireless-regdb-static \
+    iw \
     ${CORE_IMAGE_EXTRA_INSTALL} \
     "
 
 # bridge.ko is required by the vif-bridge script that libxl runs when a vif is
 # attached; without it the backend setup fails with "Unknown device type".
-# No netfilter modules are installed: this image ships no iptables/nft userspace,
-# so they could not be configured, and PC<->Dom0 traffic is routed (not NAT'd)
-# through DomD -- see dom0-domd-vif-up.
+# Wi-Fi modules/firmware/userspace are installed here because DOM0_OS=linux keeps
+# the BCM43455 SDIO controller in Dom0. DomD still owns LAN/app forwarding, but
+# the management path needs Dom0 to bring wlan0 up and acquire an uplink address.
 
 # Exclude GPU stack + qemu + dev tools (those run in DomD)
 PACKAGE_EXCLUDE = " \
@@ -189,4 +200,3 @@ ExecStart=
 ExecStart=/lib/systemd/systemd-networkd-wait-online --any --timeout=30
 EOF
 }
-
