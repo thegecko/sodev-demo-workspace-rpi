@@ -1,0 +1,83 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+set -eu
+
+usage() {
+    echo "usage: $0 configure <xl.cfg> | wait-weston [timeout-seconds] | has-connected-output" >&2
+    exit 2
+}
+
+has_connected_output() {
+    # DomD owns the vc4 DRM device in the disaggregated topology. Weston cannot
+    # start the DRM backend when every HDMI connector is disconnected and has an
+    # empty mode list, so use QEMU's EGL headless display backend in that case.
+    for status in /sys/class/drm/card*-HDMI-A-*/status \
+                  /sys/class/drm/card*-DP-*/status \
+                  /sys/class/drm/card*-DVI-*/status; do
+        [ -e "$status" ] || continue
+        [ "$(cat "$status" 2>/dev/null || true)" = connected ] && return 0
+    done
+    return 1
+}
+
+display_backend() {
+    if has_connected_output; then
+        echo "sdl,gl=es"
+    else
+        echo "egl-headless"
+    fi
+}
+
+configure() {
+    cfg="$1"
+    [ -f "$cfg" ] || { echo "xt-guest-display-mode: $cfg not found" >&2; exit 1; }
+
+    backend="$(display_backend)"
+    tmp="${cfg}.tmp.$$"
+    sed "s/'-display', '\(sdl,gl=es\|egl-headless\|none\)'/'-display', '${backend}'/" "$cfg" > "$tmp"
+    cat "$tmp" > "$cfg"
+    rm -f "$tmp"
+
+    if [ "$backend" = "egl-headless" ]; then
+        echo "xt-guest-display-mode: no connected DRM output; configured $cfg for QEMU egl-headless"
+    else
+        echo "xt-guest-display-mode: connected DRM output present; configured $cfg for SDL/Wayland"
+    fi
+}
+
+wait_weston() {
+    timeout="${1:-120}"
+    if ! has_connected_output; then
+        echo "xt-guest-display-mode: no connected DRM output; skipping Weston readiness wait"
+        return 0
+    fi
+
+    i=0
+    while [ "$i" -lt "$timeout" ]; do
+        if [ "$(xenstore-read /local/domain/1/drivers/weston-up/status 2>/dev/null || true)" = ready ]; then
+            return 0
+        fi
+        i=$((i + 1))
+        sleep 1
+    done
+    echo "DomD weston-up not ready after ${timeout}s" >&2
+    return 1
+}
+
+[ $# -ge 1 ] || usage
+case "$1" in
+    configure)
+        [ $# -eq 2 ] || usage
+        configure "$2"
+        ;;
+    wait-weston)
+        [ $# -le 2 ] || usage
+        wait_weston "${2:-120}"
+        ;;
+    has-connected-output)
+        has_connected_output
+        ;;
+    *)
+        usage
+        ;;
+esac

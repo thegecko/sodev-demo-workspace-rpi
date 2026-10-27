@@ -52,6 +52,8 @@ SYSTEMD_SERVICE:${PN} = " \
     "
 SYSTEMD_AUTO_ENABLE = "enable"
 
+RDEPENDS:${PN} += "xt-guest-display"
+
 do_install() {
     install -d ${D}${sysconfdir}/xen
     install -m 0644 ${UNPACKDIR}/domu.cfg ${D}${sysconfdir}/xen/domu.cfg

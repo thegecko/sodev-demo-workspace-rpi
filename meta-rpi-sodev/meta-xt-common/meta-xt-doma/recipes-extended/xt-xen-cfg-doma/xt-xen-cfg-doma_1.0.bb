@@ -29,7 +29,7 @@ SYSTEMD_AUTO_ENABLE = "enable"
 
 # The unit's ExecStart/ExecStartPre chain needs `xl` and the xenstore CLI; the sweep
 # script additionally uses awk and grep, which busybox provides.
-RDEPENDS:${PN} = "xen-tools-xl xen-tools-xenstore"
+RDEPENDS:${PN} = "xen-tools-xl xen-tools-xenstore xt-guest-display"
 
 # Which Raspberry Pi 5 SKU this image is for. Set from the moulin BOARD_RAM
 # parameter through the domd builder's conf: meta-xt-doma is in that builder's

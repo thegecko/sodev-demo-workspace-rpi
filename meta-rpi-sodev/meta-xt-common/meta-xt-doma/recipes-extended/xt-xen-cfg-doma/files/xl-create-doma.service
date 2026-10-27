@@ -29,9 +29,9 @@ Before=xl-create-domu.service
 # `xl devd` (xendriverdomain.service) and inherited its hack-xdg drop-in env.
 # In the disaggregated topology THIS unit's xl/libxl spawns the dm directly, so provide the same env
 # here: the wayland vars let any SDL/display path connect to weston's global
-# socket, which weston.socket publishes at ${runtimedir}/wayland-0 = /run/wayland-0,
-# V3D_DEBUG=db is the Mesa V3D double-buffer perf knob, and they are harmless for
-# the headless dm case.
+# socket, which weston.socket publishes at ${runtimedir}/wayland-0 = /run/wayland-0.
+# xt-guest-display-mode rewrites the cfg to egl-headless when no HDMI connector is
+# connected, in which case these env vars are harmless.
 Environment="XDG_RUNTIME_DIR=/run"
 Environment="WAYLAND_DISPLAY=wayland-0"
 Environment="SDL_VIDEODRIVER=wayland"
@@ -49,11 +49,10 @@ ExecStartPre=/bin/sh -c '[ -f /mnt/aaos-android-kernel ] || mount /dev/mmcblk0p1
 # systemd refuses -- it logged "Ignoring unknown escape sequences" for this line on
 # every boot.
 ExecStartPre=/usr/libexec/doma-devmodel-sweep
-# Wait for DomD weston to be ready (DomD weston-notification.service writes
-# /local/domain/1/drivers/weston-up/status=ready; qemu SDL needs the wayland
-# connection). Mounting the p2 ext4 rootfs plus a full systemd boot before weston
-# is ready takes a while, hence the generous 120s timeout.
-ExecStartPre=/bin/sh -c 'for i in $$(seq 1 120); do [ "$$(xenstore-read /local/domain/1/drivers/weston-up/status 2>/dev/null)" = "ready" ] && exit 0; sleep 1; done; echo "DomD weston-up not ready after 120s"; exit 1'
+# Keep SDL/Wayland when a display is connected; use QEMU EGL headless with no HDMI.
+ExecStartPre=/usr/libexec/xt-guest-display-mode configure /etc/xen/doma.cfg
+# Wait for Weston only when QEMU will use the Wayland/SDL path.
+ExecStartPre=/usr/libexec/xt-guest-display-mode wait-weston 120
 # Choose the HDMI card DomA's audio backend opens, from the ELD. MUST be the last
 # ExecStartPre: it rewrites doma.cfg and ExecStart below reads the result.
 # Prefixed with `-` because losing the audio choice is not a reason to refuse to
