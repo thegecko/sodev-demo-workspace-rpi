@@ -13,6 +13,11 @@ EXTRA_OEMAKE:append = " VERSION=${DOCKER_COMPOSE_VERSION}"
 # Covers recipes that use go.bbclass/go-mod directly.
 GO_LDFLAGS:append = " -X github.com/docker/compose/v2/internal.Version=${DOCKER_COMPOSE_VERSION}"
 
+# The upstream recipe already applies version metadata via GO_LDFLAGS during
+# do_compile().  Leaving the same -X in GOBUILDFLAGS passes it directly to
+# `go build`, where it is not a valid top-level build flag.
+GOBUILDFLAGS:remove = "-X github.com/docker/compose/v2/internal.Version=${DOCKER_COMPOSE_VERSION}"
+
 # Belt-and-braces fallback for recipes that neither pass VERSION nor GO_LDFLAGS
 # through to the final `go build`: Compose keeps the development default as a Go
 # variable initialised to "dev".
