@@ -1716,8 +1716,31 @@ if [ "${ENABLE_DOMU}" = "yes" ]; then
   # double quotes and newlines) cannot survive the round trip, and escaping the $
   # would make the container expand a variable it does not have.
   AGL_VENUS_CONF="$workdir/.agl-venus.conf"
+  AGL_DOMU_TOPO_CONF="$workdir/.agl-domu-topo.conf"
   AGL_VENUS_LAYER="$workdir/meta-rpi-sodev/meta-agl-venus"
   rm -f "$AGL_VENUS_CONF"
+  cat > "$AGL_DOMU_TOPO_CONF" <<'AGLTOPODOMU'
+
+# >>> domu-topo-runtime (build.sh -u) >>>
+# The SD p3 DomU rootfs is built by this AGL bitbake, not by the in-tree
+# rpi5-image-domu-gfx debug image. Topo deploys to DomU over SSH and expects a
+# reachable Docker daemon plus lscpu for health checks.
+IMAGE_INSTALL:append = " docker-moby util-linux-lscpu"
+ROOTFS_POSTPROCESS_COMMAND:append = " enable_agl_domu_docker; "
+
+enable_agl_domu_docker() {
+    unit="${IMAGE_ROOTFS}${systemd_system_unitdir}/docker.service"
+    wants="${IMAGE_ROOTFS}${sysconfdir}/systemd/system/multi-user.target.wants"
+
+    if [ ! -e "$unit" ]; then
+        bbfatal "docker.service was not installed into the AGL DomU rootfs"
+    fi
+
+    install -d "$wants"
+    ln -sf "${systemd_system_unitdir}/docker.service" "$wants/docker.service"
+}
+# <<< domu-topo-runtime (build.sh -u) <<<
+AGLTOPODOMU
   if [ "$GPU" = vulkan ]; then
     # Marker-delimited so the container can REPLACE a previous block rather than
     # append another one. conf/local.conf survives between runs -- aglsetup does not
@@ -1757,11 +1780,17 @@ AGLVENUS
     # conf/local.conf (relative to the build dir), last so they win over aglsetup's
     # defaults. Values are host-expanded absolute paths.
     printf '%s\n' 'DL_DIR = \"${AGL_DL_DIR}\"' 'SSTATE_DIR = \"${AGL_SSTATE_DIR}\"' >> conf/local.conf
-    # The Venus conf lines, appended after the cache paths so they are last in the
-    # file. Any block a PREVIOUS run left is deleted first: conf/local.conf is not
-    # truncated by aglsetup, so appending unconditionally would accumulate duplicates
-    # on a repeat run and would leave the block in place on a later --gpu=gl run.
+    # The local.conf fragments, appended after the cache paths so they are last in
+    # the file. Any block a PREVIOUS run left is deleted first: conf/local.conf is
+    # not truncated by aglsetup, so appending unconditionally would accumulate
+    # duplicates on a repeat run and would leave the Vulkan block in place on a
+    # later --gpu=gl run.
+    sed -i '/^# >>> domu-topo-runtime (build.sh -u) >>>$/,/^# <<< domu-topo-runtime (build.sh -u) <<<$/d' conf/local.conf
     sed -i '/^# >>> venus-lane (build.sh --gpu=vulkan) >>>$/,/^# <<< venus-lane (build.sh --gpu=vulkan) <<<$/d' conf/local.conf
+    if [ ! -f '${AGL_DOMU_TOPO_CONF}' ]; then
+      echo 'ERROR: ${AGL_DOMU_TOPO_CONF} is missing; refusing to build AGL DomU without Topo runtime' >&2; exit 1
+    fi
+    cat '${AGL_DOMU_TOPO_CONF}' >> conf/local.conf
     # In the Vulkan lane the file is mandatory: without it the AGL rootfs would come out
     # with no Venus ICD and no Vulkan embedder, i.e. a silently GL guest in the DEFAULT
     # configuration. In the gl lane there is nothing to append.
