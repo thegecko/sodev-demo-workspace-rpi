@@ -13,3 +13,17 @@
 # machine is active; the DomD-side install (images/, gated on raspberrypi5) is
 # inert here, and vice versa.
 IMAGE_INSTALL:append:virtio-armv8-xt = " domu-network docker-moby util-linux-lscpu"
+
+ROOTFS_POSTPROCESS_COMMAND:append:virtio-armv8-xt = " enable_domu_docker; "
+
+enable_domu_docker() {
+    unit="${IMAGE_ROOTFS}${systemd_system_unitdir}/docker.service"
+    wants="${IMAGE_ROOTFS}${sysconfdir}/systemd/system/multi-user.target.wants"
+
+    if [ ! -e "$unit" ]; then
+        bbfatal "docker.service was not installed into the DomU rootfs"
+    fi
+
+    install -d "$wants"
+    ln -sf "${systemd_system_unitdir}/docker.service" "$wants/docker.service"
+}
