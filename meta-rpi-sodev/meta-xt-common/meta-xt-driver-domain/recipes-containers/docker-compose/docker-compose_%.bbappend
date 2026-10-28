@@ -43,14 +43,31 @@ case "$1" in
         printf '{"SchemaVersion":"0.1.0","Vendor":"Docker Inc.","Version":"@DOCKER_COMPOSE_VERSION@","ShortDescription":"Docker Compose","URL":"https://docs.docker.com/compose/"}\n'
         exit 0
         ;;
-    version)
-        case " ${*#version} " in
-            *" --short "*) echo "@DOCKER_COMPOSE_VERSION@" ;;
-            *) echo "Docker Compose version @DOCKER_COMPOSE_VERSION@" ;;
-        esac
-        exit 0
-        ;;
 esac
+
+# Docker CLI plugin invocation is not identical to executing the plugin binary
+# directly on every packaged Docker version. Direct execution calls us as:
+#   docker-compose version
+# but `docker compose version` can reach the plugin with Docker's command name /
+# global args still in argv. Treat any argv containing the `version` subcommand as
+# a version query so Topo sees deterministic metadata in both paths.
+compose_version=0
+compose_short=0
+for arg in "$@"; do
+    case "$arg" in
+        version) compose_version=1 ;;
+        --short) compose_short=1 ;;
+    esac
+done
+if [ "$compose_version" = 1 ]; then
+    if [ "$compose_short" = 1 ]; then
+        echo "@DOCKER_COMPOSE_VERSION@"
+    else
+        echo "Docker Compose version @DOCKER_COMPOSE_VERSION@"
+    fi
+    exit 0
+fi
+
 exec @DOCKER_COMPOSE_REAL@ "$@"
 EOF
     sed -i "s|@DOCKER_COMPOSE_VERSION@|${DOCKER_COMPOSE_VERSION}|g" "$plugin"

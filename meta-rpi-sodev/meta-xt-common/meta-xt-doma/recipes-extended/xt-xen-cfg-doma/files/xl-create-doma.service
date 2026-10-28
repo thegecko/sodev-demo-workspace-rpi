@@ -12,11 +12,14 @@ Description=Launch DomA (AAOS) via xl create (DomD toolstack, the disaggregated 
 #     lower domid, which means creating it BEFORE DomU
 #     (Before=xl-create-domu.service; vsock is also removed from domu.cfg as a
 #     second safeguard).
-# This unit now runs INSIDE DomD (the toolstack domain).
-# DomA's own disks need no Dom0 blkback chain: DomD owns the SD via SDHCI
-# passthrough and qemu reads /dev/mmcblk0p4 directly. (xl-attach-disks.service
-# still exists in the linux flavour, but only to hand DomD its own p2 root as
-# xvda -- it attaches nothing for DomA.) domd-toolstack-prep seeds
+# This base unit runs inside DomD for the Zephyr-Dom0 flavour; the Linux-Dom0
+# flavour ships a drop-in/stubs so the same unit can run from the real Dom0
+# toolstack instead.
+# In the Zephyr-Dom0 flavour DomA's own disks need no Dom0 blkback chain: DomD
+# owns the SD via SDHCI passthrough and qemu reads /dev/mmcblk0p4 directly. In
+# the Linux-Dom0 flavour a drop-in orders this unit after xl-attach-disks.service,
+# which attaches p4 to DomD as xvdc and rewrites doma.cfg accordingly.
+# domd-toolstack-prep seeds
 # the Zephyr xenstore (cpupool name, xenconsoled domid), creates /var/lib/xen +
 # /var/log/xen/console and runs the console seeder that xl create's console
 # waits depend on.
@@ -61,8 +64,11 @@ ExecStartPre=/usr/libexec/xt-guest-display-mode wait-weston 120
 # script changes nothing there and DomA opens doma.cfg's literal out.dev.
 ExecStartPre=-/usr/libexec/doma-pick-hdmi-audio
 # Do not pass -F (with Type=oneshot, -F keeps xl in the foreground and would block
-# subsequent units forever).
-ExecStart=/usr/sbin/xl create /etc/xen/doma.cfg
+# subsequent units forever). On Linux Dom0, DomD can reach userspace before its
+# blkfront has fully settled for xvdc; a one-shot `xl create` then fails with
+# "Qdisk backend not ready", while the same config succeeds moments later. Retry
+# synchronously so the boot ordering still holds until DomA is actually created.
+ExecStart=/bin/sh -c 'rc=1; for i in $$(seq 1 60); do /usr/sbin/xl create /etc/xen/doma.cfg && exit 0; rc=$$?; echo "xl create DomA attempt $$i failed with rc=$$rc; retrying"; /usr/sbin/xl destroy DomA >/dev/null 2>&1 || true; /usr/libexec/doma-devmodel-sweep >/dev/null 2>&1 || true; sleep 2; done; exit $$rc'
 ExecStop=/usr/sbin/xl shutdown -w DomA
 StandardOutput=journal
 StandardError=journal
