@@ -1761,6 +1761,10 @@ AGLVENUS
     # only; the git transport works regardless.
     repo init --no-clone-bundle -b '${AGL_BRANCH}' -u https://github.com/automotive-grade-linux/AGL-repo.git
     repo sync --no-clone-bundle -j\$(nproc) --retry-fetches=20
+    # AGL enables useradd-staticids globally. docker-moby creates the docker
+    # group, so provide a stable ID in AGL's static group table before parsing
+    # recipes or the package is skipped as unbuildable.
+    grep -q '^docker::' meta-agl/meta-agl-core/files/group || printf '%s\n' 'docker::904:' >> meta-agl/meta-agl-core/files/group
     source meta-agl/scripts/aglsetup.sh -m '${AGL_MACHINE}' -b build agl-demo agl-devel agl-kvm agl-ic
     # aglsetup sources oe-init-build-env, so CWD is now the build dir (agl/build)
     # -- the same CWD the bitbake below relies on. Append the shared cache paths to
