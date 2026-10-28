@@ -34,6 +34,10 @@ do_install:append() {
     cat > "$plugin" <<'EOF'
 #!/bin/sh
 case "$1" in
+    docker-cli-plugin-metadata)
+        printf '{"SchemaVersion":"0.1.0","Vendor":"Docker Inc.","Version":"@DOCKER_COMPOSE_VERSION@","ShortDescription":"Docker Compose","URL":"https://docs.docker.com/compose/"}\n'
+        exit 0
+        ;;
     version)
         case " ${*#version} " in
             *" --short "*) echo "@DOCKER_COMPOSE_VERSION@" ;;
