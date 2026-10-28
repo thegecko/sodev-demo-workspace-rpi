@@ -1113,17 +1113,22 @@ parameters:
   # firmware, declares LICENSE_FLAGS = "synaptics-killswitch"
   # (meta-raspberrypi's docs/ipcompliance.md explains the flag). Nothing here
   # accepts it on the user's behalf: "yes" (build.sh
-  # --accept-synaptics-killswitch) adds the acceptance to the configuration
-  # moulin writes for DomD, and the DomD image then installs the firmware. With
-  # "no", the default, the image is built without it and DomD has no Wi-Fi.
+  # --accept-synaptics-killswitch) adds the acceptance to the configurations
+  # moulin writes for DomD and Linux Dom0. With DOM0_OS=linux the real radio is
+  # owned by Dom0, so the Dom0 image requires this firmware; without the license
+  # acceptance the build should fail rather than silently producing no wlan0.
   ACCEPT_SYNAPTICS_KILLSWITCH:
-    desc: "Accept linux-firmware-rpidistro's synaptics-killswitch licence flag, so the DomD image gets the BCM43455 Wi-Fi firmware. yaml default no; build.sh sets it with --accept-synaptics-killswitch."
+    desc: "Accept linux-firmware-rpidistro's synaptics-killswitch licence flag, so the Linux Dom0/DomD images can include BCM43455 Wi-Fi firmware. yaml default no; build.sh sets it with --accept-synaptics-killswitch."
     "no":
       default: true
     "yes":
       overrides:
         components:
           domd:
+            builder:
+              conf:
+                - [LICENSE_FLAGS_ACCEPTED:append, " synaptics-killswitch"]
+          dom0:
             builder:
               conf:
                 - [LICENSE_FLAGS_ACCEPTED:append, " synaptics-killswitch"]
