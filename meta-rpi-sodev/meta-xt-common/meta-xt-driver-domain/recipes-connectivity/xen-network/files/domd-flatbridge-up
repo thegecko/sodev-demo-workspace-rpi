@@ -242,6 +242,12 @@ if command -v iptables >/dev/null 2>&1; then
     ipt_add -A FORWARD -i xenbr0 -o xenbr0 -p tcp -d "$DOMU_ADDR" -j ACCEPT
     ipt_add -A FORWARD -i xenbr0 -o xenbr0 -p tcp -s "$DOMU_ADDR" -j ACCEPT
 
+    # USB gadget ingress is DNATed/SNATed by Dom0, then routed through DomD's
+    # point-to-point eth1 interface to reach DomU on xenbr0. Allow that routed
+    # leg explicitly; Docker may leave the FORWARD policy as DROP.
+    ipt_add -A FORWARD -i eth1 -o xenbr0 -p tcp -d "$DOMU_ADDR" -j ACCEPT
+    ipt_add -A FORWARD -i xenbr0 -o eth1 -p tcp -s "$DOMU_ADDR" -j ACCEPT
+
     ipt_add -I FORWARD -i xenbr0 -o "$UPLINK_WIFI_IF" -j ACCEPT
     # The stateful return rule is OPTIONAL: it needs the xt_conntrack module,
     # and the FORWARD policy is ACCEPT, so replies come back without it.
