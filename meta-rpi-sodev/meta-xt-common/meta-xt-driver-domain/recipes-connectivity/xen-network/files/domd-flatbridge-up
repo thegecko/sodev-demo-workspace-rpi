@@ -59,12 +59,6 @@ xsr "xenbr0-up"
 # there shadowed Dom0's vif end), so enable forwarding explicitly here.
 sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 && log "ip_forward=1 (PC->Dom0 routing)"
 xsr "ipfwd=$(cat /proc/sys/net/ipv4/ip_forward)"
-# Do not run DomD's old dnsmasq DHCP server on xenbr0 when eth0 is bridged to a
-# physical LAN. The upstream network should supply addresses to DomD and any
-# DHCP-capable bridged guests.
-systemctl stop dnsmasq.service >/dev/null 2>&1 || true
-systemctl disable dnsmasq.service >/dev/null 2>&1 || true
-
 # Move the physical RP1 NIC into xenbr0. The bridge, not eth0, is the DHCP
 # client so DomD gets a normal address from the external Ethernet network.
 ip addr flush dev eth0 2>/dev/null
@@ -72,14 +66,29 @@ ip link set eth0 master xenbr0 2>/dev/null && log "eth0 -> xenbr0"
 ip link set eth0 up 2>/dev/null
 xsr "eth0master=$([ -e /sys/class/net/eth0/master ] && echo y || echo n)"
 
-# Get the external wired address by DHCP on the final bridge. This intentionally
-# mirrors the manual recovery command (`udhcpc -i xenbr0`) instead of changing
-# the early boot networkd topology.
-if command -v udhcpc >/dev/null 2>&1 && ! ip -4 addr show dev xenbr0 | grep -q ' inet '; then
+# Get an optional external wired address by DHCP on the final bridge only when a
+# cable is present. With no carrier, udhcpc's deconfig path can remove the static
+# internal .10 address and leave xenbr0 addressless; in that headless/Wi-Fi-only
+# case keep the internal DHCP server up for DomA/DomU instead.
+ETH0_CARRIER=$(cat /sys/class/net/eth0/carrier 2>/dev/null || echo 0)
+if [ "$ETH0_CARRIER" = "1" ] && command -v udhcpc >/dev/null 2>&1; then
+    # Do not run DomD's local dnsmasq DHCP server on a bridged physical LAN. The
+    # upstream network should supply addresses to DomD and any DHCP-capable
+    # bridged guests.
+    systemctl stop dnsmasq.service >/dev/null 2>&1 || true
+    systemctl disable dnsmasq.service >/dev/null 2>&1 || true
     [ -f "$DHCP_PID" ] && kill "$(cat "$DHCP_PID")" 2>/dev/null || true
     rm -f "$DHCP_PID"
     udhcpc -i xenbr0 -p "$DHCP_PID" -b -R -x hostname:@SODEV_MANAGEMENT_HOSTNAME@ >/dev/null 2>&1 && log "udhcpc started on xenbr0" || \
         log "WARNING: failed to start udhcpc on xenbr0"
+else
+    [ -f "$DHCP_PID" ] && kill "$(cat "$DHCP_PID")" 2>/dev/null || true
+    rm -f "$DHCP_PID"
+    ip -4 addr show dev xenbr0 | grep -q " inet ${DOMD_XENBR0_ADDR} " || \
+        ip addr add "$DOMD_XENBR0_ADDR" dev xenbr0 2>/dev/null || true
+    systemctl enable dnsmasq.service >/dev/null 2>&1 || true
+    systemctl start dnsmasq.service >/dev/null 2>&1 && log "dnsmasq started for internal xenbr0 DHCP (eth0 carrier=$ETH0_CARRIER)" || \
+        log "WARNING: failed to start dnsmasq for internal xenbr0 DHCP (eth0 carrier=$ETH0_CARRIER)"
 fi
 
 # enslave the DomU/DomA qemu taps as they appear. DomU's tap (vif-emu2) is

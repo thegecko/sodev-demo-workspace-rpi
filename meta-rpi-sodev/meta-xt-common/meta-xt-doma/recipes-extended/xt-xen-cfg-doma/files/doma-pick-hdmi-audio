@@ -56,7 +56,40 @@ fi
 done
 
 if [ -z "$PICK" ]; then
-    echo "doma-pick-hdmi-audio: no HDMI port can take audio; leaving the cfgs alone" >&2
+    # Headless boots deliberately rewrite the display backend before this script
+    # runs. With no HDMI ELD and qemu still pointed at ALSA HDMI, DomA creation
+    # fails before qdisk is ready; use a silent backend instead. Non-headless
+    # boots keep the old behaviour: no usable HDMI audio means no rewrite.
+    SEEN=0
+    CHANGED=0
+    ALREADY=0
+    for f in $CFGS; do
+        [ -f "$f" ] || continue
+        SEEN=$((SEEN+1))
+        grep -q "^[[:space:]]*'-display',[[:space:]]*'egl-headless'" "$f" || continue
+        if grep "^[[:space:]]*'-audiodev'," "$f" | grep -q "'none,id=snd0'"; then
+            echo "  $f: already using silent audio for headless mode"
+            ALREADY=$((ALREADY+1))
+            continue
+        fi
+        if ! grep -q "^[[:space:]]*'-audiodev'," "$f"; then
+            echo "  $f: headless but no '-audiodev' line to rewrite" >&2
+            continue
+        fi
+        [ -f "$f.hdmiaudio.bak" ] || cp "$f" "$f.hdmiaudio.bak"
+        sed -i "/^[[:space:]]*'-audiodev',/s#'[^']*',$#'none,id=snd0',#" "$f"
+        if grep "^[[:space:]]*'-audiodev'," "$f" | grep -q "'none,id=snd0'"; then
+            echo "  $f: headless/no HDMI audio -> none,id=snd0"
+            CHANGED=$((CHANGED+1))
+        else
+            echo "  $f: failed to switch headless audio to none,id=snd0" >&2
+        fi
+    done
+    if [ "$CHANGED" -gt 0 ] || [ "$ALREADY" -gt 0 ]; then
+        echo "doma-pick-hdmi-audio: headless silent audio rewritten $CHANGED / already right $ALREADY / cfgs seen $SEEN"
+    else
+        echo "doma-pick-hdmi-audio: no HDMI port can take audio; leaving the cfgs alone" >&2
+    fi
     exit 0
 fi
 echo "doma-pick-hdmi-audio: picked plughw:$PICK"

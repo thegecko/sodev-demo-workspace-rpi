@@ -22,3 +22,28 @@ do_configure:append() {
             | xargs sed -i "s/Version[[:space:]]*=[[:space:]]*\"dev\"/Version = \"${DOCKER_COMPOSE_VERSION}\"/"
     fi
 }
+
+# Some Compose recipes build the plugin without honouring VERSION/GO_LDFLAGS and
+# keep reporting "Docker Compose version dev". Topo gates on that command before
+# using Compose, so make the installed plugin answer the version query
+# deterministically while passing every real Compose operation through untouched.
+do_install:append() {
+    plugin="${D}${libdir}/docker/cli-plugins/docker-compose"
+    [ -e "$plugin" ] || return 0
+    mv "$plugin" "$plugin.real"
+    cat > "$plugin" <<'EOF'
+#!/bin/sh
+case "$1" in
+    version)
+        case " ${*#version} " in
+            *" --short "*) echo "@DOCKER_COMPOSE_VERSION@" ;;
+            *) echo "Docker Compose version @DOCKER_COMPOSE_VERSION@" ;;
+        esac
+        exit 0
+        ;;
+esac
+exec /usr/lib/docker/cli-plugins/docker-compose.real "$@"
+EOF
+    sed -i "s|@DOCKER_COMPOSE_VERSION@|${DOCKER_COMPOSE_VERSION}|g" "$plugin"
+    chmod 0755 "$plugin"
+}
