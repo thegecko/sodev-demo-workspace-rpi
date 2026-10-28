@@ -42,8 +42,9 @@ case "$1" in
         exit 0
         ;;
 esac
-exec /usr/lib/docker/cli-plugins/docker-compose.real "$@"
+exec @DOCKER_COMPOSE_REAL@ "$@"
 EOF
     sed -i "s|@DOCKER_COMPOSE_VERSION@|${DOCKER_COMPOSE_VERSION}|g" "$plugin"
+    sed -i "s|@DOCKER_COMPOSE_REAL@|${libdir}/docker/cli-plugins/docker-compose.real|g" "$plugin"
     chmod 0755 "$plugin"
 }
