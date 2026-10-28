@@ -77,7 +77,7 @@ if [ -z "$PICK" ]; then
             continue
         fi
         [ -f "$f.hdmiaudio.bak" ] || cp "$f" "$f.hdmiaudio.bak"
-        sed -i "/^[[:space:]]*'-audiodev',/s#'[^']*',$#'none,id=snd0',#" "$f"
+        sed -i "/^[[:space:]]*'-audiodev',/s|'[^']*',$|'none,id=snd0',|" "$f"
         if grep "^[[:space:]]*'-audiodev'," "$f" | grep -q "'none,id=snd0'"; then
             echo "  $f: headless/no HDMI audio -> none,id=snd0"
             CHANGED=$((CHANGED+1))
