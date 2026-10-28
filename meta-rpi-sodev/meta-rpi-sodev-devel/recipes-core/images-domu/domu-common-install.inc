@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-# DomU debug-image package set (static-IP + ssh network drop-in).
+# DomU debug-image package set (static-IP + ssh network drop-in + Topo target
+# runtime). The deployed DomU in the RPi5 stack boots a core-image-weston ext4
+# rootfs from SD partition 3, not the rpi5-image-domu-gfx initramfs; keep the
+# packages Topo checks for here too.
 #
 # Gated on the DomU MACHINE (virtio-armv8-xt). This .inc is required from the
 # images-domu/ core-image-minimal.bbappend / core-image-weston.bbappend, which
@@ -9,4 +12,4 @@
 # (cross-contamination). The MACHINE override makes it inert unless the DomU
 # machine is active; the DomD-side install (images/, gated on raspberrypi5) is
 # inert here, and vice versa.
-IMAGE_INSTALL:append:virtio-armv8-xt = " domu-network"
+IMAGE_INSTALL:append:virtio-armv8-xt = " domu-network docker-moby util-linux-lscpu"
