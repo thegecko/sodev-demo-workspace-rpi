@@ -6,6 +6,7 @@ set -eu
 
 DEFAULT_TARGETS="@XT_DOMA_WLAN0_IP@:5555 @XT_DOMA_IP@:5555"
 TARGETS="${DOMA_ADB_TARGET:-${DOMA_ADB_TARGETS:-$DEFAULT_TARGETS}}"
+CONNECT_WAIT="${DOMA_ADB_CONNECT_WAIT:-30}"
 
 usage() {
     cat <<EOF
@@ -26,8 +27,14 @@ connect_target() {
         out="$(adb connect "$target" 2>&1 || true)"
         case "$out" in
             *connected*|*already\ connected*)
-                printf '%s\n' "$target"
-                return 0
+                for _ in $(seq 1 "$CONNECT_WAIT"); do
+                    state="$(adb -s "$target" get-state 2>/dev/null || true)"
+                    if [ "$state" = "device" ]; then
+                        printf '%s\n' "$target"
+                        return 0
+                    fi
+                    sleep 1
+                done
                 ;;
         esac
     done

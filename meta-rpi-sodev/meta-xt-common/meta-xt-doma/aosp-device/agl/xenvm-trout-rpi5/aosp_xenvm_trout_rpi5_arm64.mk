@@ -120,6 +120,18 @@ LOCAL_AUDIO_PRODUCT_COPY_FILES := \
 # V3D. RenderEngine and HWUI reach the loader directly and do not read them.
 TARGET_VULKAN_SUPPORT := false
 
+# ---------------------------------------------------------------------------
+# Vehicle HAL: keep trout's guest-side VHAL client installed.
+#
+# DomD runs vehicle_hal_grpc_server, but Android also needs the guest-side HIDL
+# service that registers android.hardware.automotive.vehicle@2.0::IVehicle/default
+# and talks to that host server over vsock/gRPC. When it is absent, CarService
+# repeatedly asks hwservicemanager to start IVehicle/default, init reports it cannot
+# find the interface service, sys.boot_completed never settles, and the DomA ADB /
+# display path stays unreachable. Set the trout LOCAL_* selector explicitly before
+# the inherit so parent makefiles cannot accidentally omit it.
+LOCAL_VHAL_PRODUCT_PACKAGE := android.hardware.automotive.vehicle@2.0-virtualization-service
+
 # ABOVE the inherit, on purpose: for one destination the first PRODUCT_COPY_FILES entry
 # wins (build/make/core/Makefile:139-156), and inherit-product puts the parent's entries
 # where the inherit line is (product.mk:539-540), so a line below it would be dropped
