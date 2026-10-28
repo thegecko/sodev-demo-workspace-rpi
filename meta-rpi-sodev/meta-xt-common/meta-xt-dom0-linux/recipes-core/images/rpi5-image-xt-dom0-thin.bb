@@ -65,7 +65,7 @@ IMAGE_INSTALL = " \
     kernel-module-brcmfmac-cyw \
     kernel-module-brcmfmac-bca \
     kernel-module-brcmfmac-wcc \
-    linux-firmware-rpidistro-bcm43455 \
+    ${DOM0_WIFI_FW} \
     wireless-regdb-static \
     iw \
     ${CORE_IMAGE_EXTRA_INSTALL} \
@@ -76,6 +76,13 @@ IMAGE_INSTALL = " \
 # Wi-Fi modules/firmware/userspace are installed here because DOM0_OS=linux keeps
 # the BCM43455 SDIO controller in Dom0. DomD still owns LAN/app forwarding, but
 # the management path needs Dom0 to bring wlan0 up and acquire an uplink address.
+BAD_RECOMMENDATIONS:remove = "linux-firmware-rpidistro-bcm43455"
+PACKAGE_EXCLUDE:remove = "linux-firmware-rpidistro-bcm43455"
+
+DOM0_WIFI_FW = "${@'linux-firmware-rpidistro-bcm43455' \
+    if bb.utils.filter('LICENSE_FLAGS_ACCEPTED', \
+    'synaptics-killswitch synaptics-killswitch_linux-firmware-rpidistro', d) \
+    else ''}"
 
 # Exclude GPU stack + qemu + dev tools (those run in DomD)
 PACKAGE_EXCLUDE = " \
@@ -108,7 +115,19 @@ inherit core-image
 IMAGE_FEATURES:append = " empty-root-password allow-empty-password allow-root-login"
 
 
-ROOTFS_POSTPROCESS_COMMAND += "flatten_dom0_network; enable_hvc0_getty; mask_legacy_qdisk_backend; fix_dom0_hostname; linux_dom0_guest_disks; "
+ROOTFS_POSTPROCESS_COMMAND += "flatten_dom0_network; enable_hvc0_getty; mask_legacy_qdisk_backend; fix_dom0_hostname; linux_dom0_guest_disks; ${@' brcmfmac_generic_fw_names;' if d.getVar('DOM0_WIFI_FW') else ''} "
+
+brcmfmac_generic_fw_names() {
+    d=${IMAGE_ROOTFS}/lib/firmware/brcm
+    if [ ! -e $d/brcmfmac43455-sdio.raspberrypi,5-model-b.bin ]; then
+        bbfatal "brcmfmac_generic_fw_names: board-suffixed 43455 firmware missing from the Dom0 rootfs"
+    fi
+    ln -sfn ../cypress/cyfmac43455-sdio-standard.bin $d/brcmfmac43455-sdio.bin
+    ln -sfn ../cypress/cyfmac43455-sdio.clm_blob     $d/brcmfmac43455-sdio.clm_blob
+    for f in brcmfmac43455-sdio.bin brcmfmac43455-sdio.clm_blob brcmfmac43455-sdio.txt; do
+        [ -e $d/$f ] || bbfatal "brcmfmac_generic_fw_names: $f still missing"
+    done
+}
 
 # [DOM0_OS=linux] The shared guest cfgs (domu.cfg/doma.cfg, from xt-xen-cfg-domu/
 # -doma) point qemu's -drive at /dev/mmcblk0p3 / p4 — correct for the zephyr
