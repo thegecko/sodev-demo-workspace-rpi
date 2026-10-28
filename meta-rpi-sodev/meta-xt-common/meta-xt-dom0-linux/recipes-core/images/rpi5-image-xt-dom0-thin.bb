@@ -78,11 +78,9 @@ IMAGE_INSTALL = " \
 # the management path needs Dom0 to bring wlan0 up and acquire an uplink address.
 BAD_RECOMMENDATIONS:remove = "linux-firmware-rpidistro-bcm43455"
 PACKAGE_EXCLUDE:remove = "linux-firmware-rpidistro-bcm43455"
+LICENSE_FLAGS_ACCEPTED:append = " synaptics-killswitch synaptics-killswitch_linux-firmware-rpidistro"
 
-DOM0_WIFI_FW = "${@'linux-firmware-rpidistro-bcm43455' \
-    if bb.utils.filter('LICENSE_FLAGS_ACCEPTED', \
-    'synaptics-killswitch synaptics-killswitch_linux-firmware-rpidistro', d) \
-    else ''}"
+DOM0_WIFI_FW = "linux-firmware-rpidistro-bcm43455"
 
 # Exclude GPU stack + qemu + dev tools (those run in DomD)
 PACKAGE_EXCLUDE = " \
