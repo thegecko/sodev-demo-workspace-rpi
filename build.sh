@@ -1726,19 +1726,6 @@ if [ "${ENABLE_DOMU}" = "yes" ]; then
 # rpi5-image-domu-gfx debug image. Topo deploys to DomU over SSH and expects a
 # reachable Docker daemon plus lscpu for health checks.
 IMAGE_INSTALL:append = " docker-moby util-linux-lscpu"
-ROOTFS_POSTPROCESS_COMMAND:append = " enable_agl_domu_docker; "
-
-enable_agl_domu_docker() {
-    unit="${IMAGE_ROOTFS}${systemd_system_unitdir}/docker.service"
-    wants="${IMAGE_ROOTFS}${sysconfdir}/systemd/system/multi-user.target.wants"
-
-    if [ ! -e "$unit" ]; then
-        bbfatal "docker.service was not installed into the AGL DomU rootfs"
-    fi
-
-    install -d "$wants"
-    ln -sf "${systemd_system_unitdir}/docker.service" "$wants/docker.service"
-}
 # <<< domu-topo-runtime (build.sh -u) <<<
 AGLTOPODOMU
   if [ "$GPU" = vulkan ]; then
