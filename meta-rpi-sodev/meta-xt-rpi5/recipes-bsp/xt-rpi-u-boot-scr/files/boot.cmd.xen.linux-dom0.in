@@ -242,7 +242,7 @@ fdt rm /soc@107c000000/fb
 # ------------------------------------------------------------------
 
 # ------------------------------------------------------------------
-# NO SCMI IN THIS FLAVOUR, so DomD gets no Wi-Fi here.
+# Wi-Fi stays in Linux Dom0 in this flavour.
 # ------------------------------------------------------------------
 # The zephyr flavour's script applies bcm2712-raspberrypi5-scmi-host.dtbo, marks
 # the pin controller (pinctrl@7d504100) and gio as passthrough, and makes DomD
@@ -258,6 +258,15 @@ fdt rm /soc@107c000000/fb
 # still claimed it would make Xen panic at DomD creation: Dom0 is built first
 # and takes its interrupt (SPI 274), so route_irq_to_guest() refuses it to DomD
 # with -EBUSY.
+
+# The radio still needs WL_ON asserted for the non-removable SDIO card to answer.
+# On the live Linux-Dom0 image the fixed regulator probed, but after mmc1 failed
+# enumeration it owned GPIO28 as `wl-on-reg` and left it low; the only kernel log was
+# `mmc1: Failed to initialize a non-removable card`, and no brcmfmac probe happened.
+# Keep the regulator enabled from boot so the SDIO controller sees a powered BCM43455
+# during its first enumeration attempt.
+fdt set /wl-on-reg regulator-boot-on
+fdt set /wl-on-reg regulator-always-on
 # ------------------------------------------------------------------
 
 # ------------------------------------------------------------------
