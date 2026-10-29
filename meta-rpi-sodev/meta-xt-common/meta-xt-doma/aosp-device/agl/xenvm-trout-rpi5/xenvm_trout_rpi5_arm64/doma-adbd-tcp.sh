@@ -50,22 +50,42 @@ if [ "$(/system/bin/getprop persist.vendor.doma.shadow_ap)" != "false" ]; then
 fi
 
 added=0
+restarted=0
 if [ -e "/sys/class/net/$ETH1_IF" ]; then
     # Always keep the direct management fallback pinned. If the shadow bridge is
     # absent, broken, or created after Android has already given up DHCP, DomD can
     # still reach ADB on 192.168.10.13.
     add_addr "$ETH1_IF" "$ETH1_ADDR"
     added=1
+    /system/bin/setprop ctl.restart adbd
+    restarted=1
+    log "requested adbd TCP restart on $ETH1_IF fallback"
+fi
+
+if [ "$(/system/bin/getprop persist.vendor.doma.shadow_ap)" != "false" ] && [ ! -e "/sys/class/net/$SHADOW_BR" ]; then
+    # eth1 can appear before doma_shadow_ap has created br-shadow and enslaved it.
+    # Keep waiting for the normal shadow bridge even after the fallback is usable;
+    # if Android stalls before sys.boot_completed, this oneshot may be our only
+    # chance to publish the stable 192.168.10.15 ADB endpoint.
+    while [ ! -e "/sys/class/net/$SHADOW_BR" ] && [ "$i" -lt "$WAIT_SECS" ]; do
+        /system/bin/sleep 1
+        i=$((i + 1))
+    done
 fi
 
 if [ -e "/sys/class/net/$SHADOW_BR" ]; then
     add_addr "$SHADOW_BR" "$SHADOW_ADDR"
     added=1
+    /system/bin/setprop ctl.restart adbd
+    restarted=1
+    log "requested adbd TCP restart on $SHADOW_BR"
 elif [ "$added" -eq 1 ]; then
     log "$SHADOW_BR absent; using $ETH1_IF fallback"
 else
     log "WARNING: neither $SHADOW_BR nor $ETH1_IF exists; adbd will listen but DomD may not reach it"
 fi
 
-/system/bin/setprop ctl.restart adbd
-log "requested adbd TCP restart on port $ADB_PORT"
+if [ "$restarted" -eq 0 ]; then
+    /system/bin/setprop ctl.restart adbd
+    log "requested adbd TCP restart on port $ADB_PORT"
+fi
