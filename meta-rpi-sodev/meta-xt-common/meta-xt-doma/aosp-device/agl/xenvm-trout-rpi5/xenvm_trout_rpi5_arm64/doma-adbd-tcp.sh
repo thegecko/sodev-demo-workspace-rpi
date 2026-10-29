@@ -34,13 +34,14 @@ add_addr() {
     fi
 }
 
-# doma_shadow_ap runs from the same sys.boot_completed trigger and creates
-# br-shadow after it has created the hwsim radios and enslaved eth1. Wait for it
-# so the normal path is independent of DHCP and of wlan0 association timing. If
-# shadow-AP mode is explicitly disabled, skip straight to the eth1 fallback.
+# doma_shadow_ap creates br-shadow after it has created the hwsim radios and
+# enslaved eth1. This helper also runs from late-init now, before the framework is
+# guaranteed to complete boot, so keep the wait short and fall back to eth1 as the
+# recovery/debug path. The sys.boot_completed trigger starts this oneshot again and
+# will add the br-shadow address later on normal boots.
 i=0
 if [ "$(/system/bin/getprop persist.vendor.doma.shadow_ap)" != "false" ]; then
-    while [ ! -e "/sys/class/net/$SHADOW_BR" ] && [ "$i" -lt 60 ]; do
+    while [ ! -e "/sys/class/net/$SHADOW_BR" ] && [ "$i" -lt 10 ]; do
         /system/bin/sleep 1
         i=$((i + 1))
     done

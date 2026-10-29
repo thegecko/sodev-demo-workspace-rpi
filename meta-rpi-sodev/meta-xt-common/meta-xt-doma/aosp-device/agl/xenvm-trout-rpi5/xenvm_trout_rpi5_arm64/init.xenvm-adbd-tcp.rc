@@ -16,6 +16,14 @@ service doma_adbd_tcp /vendor/bin/doma-adbd-tcp
     disabled
     oneshot
 
+# Bring up TCP ADB before full framework boot so DomD has a recovery/debug path
+# even when AAOS stalls before sys.boot_completed. The helper falls back to eth1
+# if br-shadow is not ready yet, then this boot-completed trigger runs it again to
+# add the shadow-bridge address when the Wi-Fi shadow path has settled.
+on late-init
+    setprop service.adb.tcp.port 5555
+    start doma_adbd_tcp
+
 on property:sys.boot_completed=1
     setprop service.adb.tcp.port 5555
     start doma_adbd_tcp
