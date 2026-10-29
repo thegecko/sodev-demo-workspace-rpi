@@ -97,13 +97,28 @@ RDEPENDS:${PN} = " \
 # (DHCP client for xenbr0) and iptables
 # (the source NAT domd-flatbridge-up installs so guests can reach the internet
 # through DomD's Wi-Fi -- without it the script logs a warning and the guests
-# have no route out).
+# have no route out). The kernel module packages are named explicitly because the
+# RPi5 DomD image measured with iptable_nat present but iptable_mangle/xt_mark
+# absent, so compiling modules is not sufficient; the rootfs must pull in the
+# modules that domd-flatbridge-up modprobes and the modules-load.d file names.
 RDEPENDS:${PN}-flatbridge = " \
     ${PN} \
     dnsmasq \
     busybox-udhcpc \
     haveged \
     iptables \
+    kernel-module-ip-tables \
+    kernel-module-iptable-filter \
+    kernel-module-iptable-mangle \
+    kernel-module-iptable-nat \
+    kernel-module-nf-conntrack \
+    kernel-module-nf-nat \
+    kernel-module-xt-addrtype \
+    kernel-module-xt-conntrack \
+    kernel-module-xt-mark \
+    kernel-module-xt-masquerade \
+    kernel-module-xt-nat \
+    kernel-module-xt-tcpudp \
 "
 
 # Guest reachability on the flat L2 bridge is handled by the dnsmasq bbappend
