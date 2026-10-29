@@ -53,14 +53,23 @@ esac
 # a version query so Topo sees deterministic metadata in both paths.
 compose_version=0
 compose_short=0
+compose_json=0
+prev_arg=
 for arg in "$@"; do
+    if [ "$prev_arg" = "--format" ] && [ "$arg" = "json" ]; then
+        compose_json=1
+    fi
     case "$arg" in
         version) compose_version=1 ;;
         --short) compose_short=1 ;;
+        --format=json) compose_json=1 ;;
     esac
+    prev_arg="$arg"
 done
 if [ "$compose_version" = 1 ]; then
-    if [ "$compose_short" = 1 ]; then
+    if [ "$compose_json" = 1 ]; then
+        printf '{"version":"@DOCKER_COMPOSE_VERSION@"}\n'
+    elif [ "$compose_short" = 1 ]; then
         echo "@DOCKER_COMPOSE_VERSION@"
     else
         echo "Docker Compose version @DOCKER_COMPOSE_VERSION@"
