@@ -271,6 +271,17 @@ fdt rm /soc@107c000000/fb
 fdt set /wl-on-reg regulator-boot-on
 fdt set /wl-on-reg regulator-always-on
 fdt set /wl-on-reg startup-delay-us <0x7a120>
+
+# With WL_ON high and the SDIO pinmux claimed, the rebuilt image still failed at
+# the host/card negotiation stage (`mmc1: Failed to initialize a non-removable
+# card`) before brcmfmac ever probed. Keep the first-probe path conservative:
+# the BCM43455 management link does not need CQE or UHS/DDR timing to become
+# usable, and removing those properties avoids asking this non-storage SDIO card
+# to initialise through the high-speed path before it has answered reliably.
+fdt rm /axi/mmc@1100000 supports-cqe
+fdt rm /axi/mmc@1100000 sd-uhs-ddr50
+fdt rm /axi/mmc@1100000 mmc-ddr-3_3v
+fdt set /axi/mmc@1100000 max-frequency <0x17d7840>
 # ------------------------------------------------------------------
 
 # ------------------------------------------------------------------
