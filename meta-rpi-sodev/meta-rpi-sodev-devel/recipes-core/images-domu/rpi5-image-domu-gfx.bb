@@ -31,6 +31,24 @@ IMAGE_INSTALL = " \
     openssh-sshd \
     openssh-sftp-server \
     docker-moby \
+    kernel-module-bridge \
+    kernel-module-br-netfilter \
+    kernel-module-dummy \
+    kernel-module-ip-tables \
+    kernel-module-iptable-filter \
+    kernel-module-iptable-mangle \
+    kernel-module-iptable-nat \
+    kernel-module-macvlan \
+    kernel-module-nf-conntrack \
+    kernel-module-nf-nat \
+    kernel-module-overlay \
+    kernel-module-veth \
+    kernel-module-x-tables \
+    kernel-module-xt-addrtype \
+    kernel-module-xt-conntrack \
+    kernel-module-xt-mark \
+    kernel-module-xt-masquerade \
+    kernel-module-xt-tcpudp \
     util-linux-lscpu \
     domu-network \
     ${VENUS_GUEST_PACKAGES} \

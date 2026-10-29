@@ -14,4 +14,7 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 # The base 6.8.0-rc1 defconfig has `# CONFIG_XEN_VIRTIO_FORCE_GRANT is not set`;
 # this fragment flips it on. The base recipe inherits kernel-yocto, so a
 # file://*.cfg in SRC_URI is auto-merged on top of the defconfig.
-SRC_URI += "file://xen-force-grant.cfg"
+SRC_URI += " \
+    file://xen-force-grant.cfg \
+    file://docker-runtime.cfg \
+"
