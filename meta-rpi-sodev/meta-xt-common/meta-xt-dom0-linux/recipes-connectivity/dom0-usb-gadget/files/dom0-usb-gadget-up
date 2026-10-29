@@ -10,6 +10,7 @@ USB_NET="198.18.77.0/24"
 DOM0_VIF_ADDR="192.168.0.1"
 DOMD_VIF_ADDR="192.168.0.11"
 DOMD_VIF="vif1.0"
+DOMD_USB_SSH_PORT=2222
 DHCP_CONF="/etc/udhcpd/usb0.conf"
 DHCP_PID="/run/udhcpd-usb0.pid"
 CONFIGFS="/sys/kernel/config"
@@ -115,10 +116,10 @@ if command -v udhcpd >/dev/null 2>&1 && [ -f "${DHCP_CONF}" ]; then
     fi
 fi
 
-# USB gadget hardware is owned by Dom0, but externally visible TCP services
-# should behave like Ethernet and land in DomD. Forward every inbound TCP port
-# from the USB host to DomD's existing point-to-point vif address. Leave UDP on
-# Dom0 so DHCP and mDNS/LLMNR for the USB link keep working locally.
+# USB gadget hardware is owned by Dom0, and plain USB SSH remains on Dom0 as the
+# recovery endpoint. Expose DomD SSH on an alternate USB port so tools can deploy
+# to DomD through a normal single-hop target, e.g. root@basecamp-usb.local:2222.
+# Leave UDP on Dom0 so DHCP and mDNS/LLMNR for the USB link keep working locally.
 if command -v iptables >/dev/null 2>&1; then
     sysctl -qw net.ipv4.ip_forward=1 2>/dev/null || true
     modprobe ip_tables 2>/dev/null || true
@@ -139,8 +140,8 @@ if command -v iptables >/dev/null 2>&1; then
         iptables $_t "$_op" "$@" 2>/dev/null || true
     }
 
-    ipt_add -t nat -A PREROUTING -i usb0 -p tcp \
-        -j DNAT --to-destination "${DOMD_VIF_ADDR}"
+    ipt_add -t nat -A PREROUTING -i usb0 -p tcp --dport "${DOMD_USB_SSH_PORT}" \
+        -j DNAT --to-destination "${DOMD_VIF_ADDR}:22"
     ipt_add -t nat -A POSTROUTING -s "${USB_NET}" -d "${DOMD_VIF_ADDR}/32" -p tcp \
         -j SNAT --to-source "${DOM0_VIF_ADDR}"
     ipt_add -A FORWARD -i usb0 -o "${DOMD_VIF}" -p tcp -d "${DOMD_VIF_ADDR}" -j ACCEPT
