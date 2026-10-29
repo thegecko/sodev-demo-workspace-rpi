@@ -36,12 +36,13 @@ add_addr() {
 
 # doma_shadow_ap creates br-shadow after it has created the hwsim radios and
 # enslaved eth1. This helper also runs from late-init now, before the framework is
-# guaranteed to complete boot, so keep the wait short and fall back to eth1 as the
-# recovery/debug path. The sys.boot_completed trigger starts this oneshot again and
-# will add the br-shadow address later on normal boots.
+# guaranteed to complete boot. Do not only wait for br-shadow here: on hardware eth1
+# can appear tens of seconds after late-init, and if Android later stalls before
+# sys.boot_completed the boot-completed retry never happens. Wait until either the
+# normal bridge or the eth1 recovery path exists, then pin an address and restart adbd.
 i=0
 if [ "$(/system/bin/getprop persist.vendor.doma.shadow_ap)" != "false" ]; then
-    while [ ! -e "/sys/class/net/$SHADOW_BR" ] && [ "$i" -lt 10 ]; do
+    while [ ! -e "/sys/class/net/$SHADOW_BR" ] && [ ! -e "/sys/class/net/$ETH1_IF" ] && [ "$i" -lt 60 ]; do
         /system/bin/sleep 1
         i=$((i + 1))
     done
