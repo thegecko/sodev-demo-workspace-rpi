@@ -264,9 +264,13 @@ fdt rm /soc@107c000000/fb
 # enumeration it owned GPIO28 as `wl-on-reg` and left it low; the only kernel log was
 # `mmc1: Failed to initialize a non-removable card`, and no brcmfmac probe happened.
 # Keep the regulator enabled from boot so the SDIO controller sees a powered BCM43455
-# during its first enumeration attempt.
+# during its first enumeration attempt. Use a conservative 500 ms startup delay;
+# live testing after manually forcing WL_ON high could not re-enumerate a host that
+# had already failed, so the boot-time sequencing is the part this image must get
+# right on the first probe.
 fdt set /wl-on-reg regulator-boot-on
 fdt set /wl-on-reg regulator-always-on
+fdt set /wl-on-reg startup-delay-us <0x7a120>
 # ------------------------------------------------------------------
 
 # ------------------------------------------------------------------
