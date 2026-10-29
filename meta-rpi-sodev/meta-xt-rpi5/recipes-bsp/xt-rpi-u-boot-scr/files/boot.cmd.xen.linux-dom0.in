@@ -281,6 +281,7 @@ fdt set /wl-on-reg startup-delay-us <0x7a120>
 fdt rm /axi/mmc@1100000 supports-cqe
 fdt rm /axi/mmc@1100000 sd-uhs-ddr50
 fdt rm /axi/mmc@1100000 mmc-ddr-3_3v
+fdt set /axi/mmc@1100000 no-1-8-v
 fdt set /axi/mmc@1100000 max-frequency <0x17d7840>
 # ------------------------------------------------------------------
 
