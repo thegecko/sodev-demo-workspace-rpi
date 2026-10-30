@@ -1834,6 +1834,7 @@ fi
 #    input not built here. --domains-only (NINJA_TARGET="") => domains only.
 APPLY_ZEPHYR="meta-rpi-sodev/meta-xt-common/meta-xt-dom0-zephyr/apply-zephyr-patches.sh"
 STAGE_AOSP_DEVICE="meta-rpi-sodev/meta-xt-common/meta-xt-doma/stage-aosp-device.sh"
+CHECK_AOSP_DEVICE="meta-rpi-sodev/meta-xt-common/meta-xt-doma/check-staged-aosp-device.sh"
 APPLY_AOSP="meta-rpi-sodev/meta-xt-common/meta-xt-doma/apply-aosp-patches.sh"
 STAGE_DOMA_KERNEL="meta-rpi-sodev/meta-xt-common/meta-xt-doma/stage-doma-kernel.sh"
 # In-container build step. prebuilt mode never invokes doma/doma_kernel: it builds the
@@ -1965,7 +1966,7 @@ else
     # --aaos-src only redirects the AOSP tree: the kernel is always built at
     # $AAOS_KERNEL_DIR_NAME inside the workspace, so this call always targets
     # the workspace copy.
-    AOSP_CMD="ninja fetch-doma_kernel fetch-doma && '${APPLY_AOSP}' \"\$PWD/${AAOS_DIR_NAME}\" && '${APPLY_AOSP}' \"\$PWD/${AAOS_KERNEL_DIR_NAME}\" aosp-kernel-patches && '${STAGE_AOSP_DEVICE}' \"\$PWD/${AAOS_DIR_NAME}\" '${BOARD}' && ninja doma_kernel && '${STAGE_DOMA_KERNEL}' \"\$PWD/${AAOS_KERNEL_DIR_NAME}/${AAOS_KERNEL_DEPLOY_DIR}\" \"\$PWD/${AAOS_DIR_NAME}\" '${AAOS_KERNEL_STAGE_DIR}' && ninja doma"
+    AOSP_CMD="ninja fetch-doma_kernel fetch-doma && '${APPLY_AOSP}' \"\$PWD/${AAOS_DIR_NAME}\" && '${APPLY_AOSP}' \"\$PWD/${AAOS_KERNEL_DIR_NAME}\" aosp-kernel-patches && '${STAGE_AOSP_DEVICE}' \"\$PWD/${AAOS_DIR_NAME}\" '${BOARD}' && '${CHECK_AOSP_DEVICE}' \"\$PWD/${AAOS_DIR_NAME}\" '${BOARD}' '${AAOS_PRODUCT_DEVICE}' doma && ninja doma_kernel && '${STAGE_DOMA_KERNEL}' \"\$PWD/${AAOS_KERNEL_DIR_NAME}/${AAOS_KERNEL_DEPLOY_DIR}\" \"\$PWD/${AAOS_DIR_NAME}\" '${AAOS_KERNEL_STAGE_DIR}' && ninja doma"
   fi
   # NG-2 class hole, DomZ edition. --domains-only leaves NINJA_TARGET empty, so the
   # bare `ninja` builds moulin's DEFAULT target -- and the domz component is not in
