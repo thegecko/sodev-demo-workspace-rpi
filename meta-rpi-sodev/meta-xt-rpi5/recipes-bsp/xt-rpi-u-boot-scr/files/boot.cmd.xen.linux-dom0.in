@@ -259,34 +259,18 @@ fdt rm /soc@107c000000/fb
 # and takes its interrupt (SPI 274), so route_irq_to_guest() refuses it to DomD
 # with -EBUSY.
 
-# The radio still needs WL_ON asserted for the non-removable SDIO card to answer.
-# On the live Linux-Dom0 image the fixed regulator probed, but after mmc1 failed
-# enumeration it owned GPIO28 as `wl-on-reg` and left it low; the only kernel log was
-# `mmc1: Failed to initialize a non-removable card`, and no brcmfmac probe happened.
-# Keep the regulator enabled from boot so the SDIO controller sees a powered BCM43455
-# during its first enumeration attempt. Use a conservative 500 ms startup delay;
-# live testing after manually forcing WL_ON high could not re-enumerate a host that
-# had already failed, so the boot-time sequencing is the part this image must get
-# right on the first probe.
+# The radio needs WL_ON asserted for the non-removable SDIO card to answer. Keep
+# the Raspberry Pi DT model here: WL_ON is an active-high fixed regulator on
+# GPIO28, not an mmc-pwrseq reset line. A pwrseq experiment made the kernel own
+# GPIO28 as `reset` and debugfs showed it `out lo ACTIVE LOW`; the card still
+# failed before brcmfmac probed. The official Raspberry Pi OS DT for Pi 5 uses
+# this regulator-only model with vmmc-supply = <&wl_on_reg>.
 fdt set /wl-on-reg regulator-boot-on
 fdt set /wl-on-reg regulator-always-on
 fdt set /wl-on-reg startup-delay-us <0x7a120>
-
-# The regulator-only model leaves the MMC core with no way to sequence the
-# BCM43455 reset/WL_ON line as part of SDIO card power-up. The Pi reference DTs
-# model the radio with mmc-pwrseq-simple, where reset-gpios is active-low so the
-# pwrseq core asserts low while powered off and deasserts high before
-# enumeration. Hand GPIO28 to the pwrseq node (not the fixed regulator) so there
-# is a single owner and so card init gets an explicit post-power-on delay.
-fdt rm /wl-on-reg gpio
-fdt rm /wl-on-reg enable-active-high
-fdt mknode / wifi-pwrseq
-fdt set /wifi-pwrseq compatible "mmc-pwrseq-simple"
-fdt set /wifi-pwrseq reset-gpios <0x1b 0x1c 0x1>
-fdt set /wifi-pwrseq post-power-on-delay-ms <0x1f4>
-fdt set /wifi-pwrseq phandle <0x500>
-fdt set /wifi-pwrseq linux,phandle <0x500>
-fdt set /axi/mmc@1100000 mmc-pwrseq <0x500>
+fdt set /wl-on-reg gpio <0x1b 0x1c 0x0>
+fdt set /wl-on-reg enable-active-high
+fdt rm /axi/mmc@1100000 mmc-pwrseq
 
 # With WL_ON high and the SDIO pinmux claimed, the rebuilt image still failed at
 # the host/card negotiation stage (`mmc1: Failed to initialize a non-removable
