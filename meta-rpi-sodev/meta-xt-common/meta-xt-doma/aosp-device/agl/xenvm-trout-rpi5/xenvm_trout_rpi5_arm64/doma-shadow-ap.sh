@@ -61,6 +61,8 @@ MAC_PREFIX=${MAC_PREFIX:-$(getprop ro.boot.wifi_mac_prefix)}
 AP_IF=${AP_IF:-wlan2}
 UPLINK_IF=${UPLINK_IF:-eth1}              # the vif bridged to DomD's xenbr0
 BR=${BR:-br-shadow}
+MGMT_ADDR=${MGMT_ADDR:-192.168.10.13/24}
+SHADOW_ADDR=${SHADOW_ADDR:-192.168.10.15/24}
 CONF_DIR=/data/vendor/wifi/shadow
 APS=$CONF_DIR/aps.conf
 # Shipped seed for $APS. /data is empty on a first boot, so without this the
@@ -355,6 +357,19 @@ if [ ! -e "/sys/class/net/$BR" ]; then
     ip link add name "$BR" type bridge || die "cannot create $BR"
 fi
 ip link set "$BR" up
+# Publish DomA management on the bridge itself. Once eth1 is enslaved it is only
+# a bridge port; an IPv4 address on the port is fragile and, on the measured RPi5
+# image, DomD saw a DHCPACK for eth1's MAC but then got no ARP replies for either
+# .13 or .15. This service is the authority that creates br-shadow and has the
+# net_admin privileges to do so, so pin both the historical eth1 address (.13)
+# and the stable shadow bridge address (.15) here before adbd is restarted by the
+# companion helper.
+for a in "$MGMT_ADDR" "$SHADOW_ADDR"; do
+    ip -4 addr show dev "$BR" | grep -q " ${a%/*}/" \
+        || ip addr add "$a" dev "$BR" 2>/dev/null \
+        || log "WARNING: failed to add $a to $BR"
+done
+setprop ctl.restart adbd 2>/dev/null || log "WARNING: failed to restart adbd after $BR addressing"
 # WAIT FOR THE UPLINK. This oneshot runs at sys.boot_completed and normally
 # finds eth1 registered long before (init's `wait for /sys/class/net/eth1` fires
 # at ~27 s), but br-shadow has come up on the board with eth1 NOT a port, and
