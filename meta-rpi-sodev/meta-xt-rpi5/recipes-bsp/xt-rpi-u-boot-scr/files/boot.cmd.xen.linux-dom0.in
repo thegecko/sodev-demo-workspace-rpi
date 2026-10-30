@@ -272,6 +272,22 @@ fdt set /wl-on-reg regulator-boot-on
 fdt set /wl-on-reg regulator-always-on
 fdt set /wl-on-reg startup-delay-us <0x7a120>
 
+# The regulator-only model leaves the MMC core with no way to sequence the
+# BCM43455 reset/WL_ON line as part of SDIO card power-up. The Pi reference DTs
+# model the radio with mmc-pwrseq-simple, where reset-gpios is active-low so the
+# pwrseq core asserts low while powered off and deasserts high before
+# enumeration. Hand GPIO28 to the pwrseq node (not the fixed regulator) so there
+# is a single owner and so card init gets an explicit post-power-on delay.
+fdt rm /wl-on-reg gpio
+fdt rm /wl-on-reg enable-active-high
+fdt mknode / wifi-pwrseq
+fdt set /wifi-pwrseq compatible "mmc-pwrseq-simple"
+fdt set /wifi-pwrseq reset-gpios <0x1b 0x1c 0x1>
+fdt set /wifi-pwrseq post-power-on-delay-ms <0x1f4>
+fdt set /wifi-pwrseq phandle <0x500>
+fdt set /wifi-pwrseq linux,phandle <0x500>
+fdt set /axi/mmc@1100000 mmc-pwrseq <0x500>
+
 # With WL_ON high and the SDIO pinmux claimed, the rebuilt image still failed at
 # the host/card negotiation stage (`mmc1: Failed to initialize a non-removable
 # card`) before brcmfmac ever probed. Keep the first-probe path conservative:
