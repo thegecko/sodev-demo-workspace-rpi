@@ -74,6 +74,13 @@ if [ "$(/system/bin/getprop persist.vendor.doma.shadow_ap)" != "false" ] && [ ! 
 fi
 
 if [ -e "/sys/class/net/$SHADOW_BR" ]; then
+    # If eth1 was used as the early fallback and is now a bridge port, keep the
+    # management addresses on the bridge only. Duplicate .13 on both the bridge
+    # and its port can confuse ARP/reachability on DomD.
+    if [ -e "/sys/class/net/$ETH1_IF/master" ]; then
+        /system/bin/ip addr del "$ETH1_ADDR" dev "$ETH1_IF" 2>/dev/null || true
+    fi
+    add_addr "$SHADOW_BR" "$ETH1_ADDR"
     add_addr "$SHADOW_BR" "$SHADOW_ADDR"
     added=1
     /system/bin/setprop ctl.restart adbd
