@@ -143,6 +143,11 @@ SRC_URI:append = " file://bcm2712-domd-nat.cfg"
 # mode for the USB-A ports; this enables the separate BCM2712 DWC2 gadget path.
 SRC_URI:append = " file://usb-gadget-config.cfg"
 
+# The Linux-Dom0 Wi-Fi path adds an mmc-pwrseq-simple node for the BCM43455 SDIO
+# radio in the boot script. Build the pwrseq driver in so the first MMC probe can
+# actually use that node.
+SRC_URI:append = " file://wifi-pwrseq.cfg"
+
 # Patch the boot DTB that firmware hands to Xen so Linux Dom0 sees the Pi 5
 # USB-C OTG controller as a usable UDC. Hardware testing showed that the shipped
 # boot partition does not include overlays/dwc2.dtbo, and merely adding
