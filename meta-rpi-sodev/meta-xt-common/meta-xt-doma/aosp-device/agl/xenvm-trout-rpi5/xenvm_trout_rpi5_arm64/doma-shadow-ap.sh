@@ -63,6 +63,8 @@ UPLINK_IF=${UPLINK_IF:-eth1}              # the vif bridged to DomD's xenbr0
 BR=${BR:-br-shadow}
 MGMT_ADDR=${MGMT_ADDR:-192.168.10.13/24}
 SHADOW_ADDR=${SHADOW_ADDR:-192.168.10.15/24}
+DOMD_ADDR=${DOMD_ADDR:-192.168.10.10}
+MGMT_SUBNET=${MGMT_SUBNET:-192.168.10.0/24}
 CONF_DIR=/data/vendor/wifi/shadow
 APS=$CONF_DIR/aps.conf
 # Shipped seed for $APS. /data is empty on a first boot, so without this the
@@ -369,6 +371,18 @@ for a in "$MGMT_ADDR" "$SHADOW_ADDR"; do
         || ip addr add "$a" dev "$BR" 2>/dev/null \
         || log "WARNING: failed to add $a to $BR"
 done
+# Android's netd installs policy rules that route uid 0 / unmarked local traffic
+# via buried_eth0 once minradio has a data call. On the measured RPi5 image that
+# made even `ping 192.168.10.10` leave as 192.168.97.2, despite br-shadow owning
+# 192.168.10.13/24. Put the internal Xen management subnet ahead of netd's rules
+# and pin DomD's host route to br-shadow; this is what made DomD->DomA ADB and
+# screencap work live.
+ip route replace "$DOMD_ADDR/32" dev "$BR" src "${MGMT_ADDR%/*}" table main 2>/dev/null \
+    || log "WARNING: failed to route $DOMD_ADDR via $BR"
+ip rule show | grep -q "to $MGMT_SUBNET lookup main" \
+    || ip rule add to "$MGMT_SUBNET" lookup main pref 50 2>/dev/null \
+    || log "WARNING: failed to add $MGMT_SUBNET policy route via main"
+ip route flush cache 2>/dev/null || true
 setprop ctl.restart adbd 2>/dev/null || log "WARNING: failed to restart adbd after $BR addressing"
 # WAIT FOR THE UPLINK. This oneshot runs at sys.boot_completed and normally
 # finds eth1 registered long before (init's `wait for /sys/class/net/eth1` fires

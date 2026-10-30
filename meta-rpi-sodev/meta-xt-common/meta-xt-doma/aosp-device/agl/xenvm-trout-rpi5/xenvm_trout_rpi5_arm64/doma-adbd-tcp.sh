@@ -14,6 +14,8 @@ SHADOW_BR=br-shadow
 SHADOW_ADDR=192.168.10.15/24
 ETH1_IF=eth1
 ETH1_ADDR=192.168.10.13/24
+DOMD_ADDR=192.168.10.10
+MGMT_SUBNET=192.168.10.0/24
 
 log() { echo "$TAG: $*"; /system/bin/log -t "$TAG" "$*" 2>/dev/null; :; }
 
@@ -33,6 +35,16 @@ add_addr() {
             && log "$iface static ADB address $addr" \
             || log "WARNING: failed to add $addr to $iface"
     fi
+}
+
+prefer_mgmt_route() {
+    iface="$1"
+    src="$2"
+    /system/bin/ip route replace "$DOMD_ADDR/32" dev "$iface" src "${src%/*}" table main 2>/dev/null || true
+    /system/bin/ip rule show | /system/bin/grep -q "to $MGMT_SUBNET lookup main" \
+        || /system/bin/ip rule add to "$MGMT_SUBNET" lookup main pref 50 2>/dev/null \
+        || true
+    /system/bin/ip route flush cache 2>/dev/null || true
 }
 
 # doma_shadow_ap creates br-shadow after it has created the hwsim radios and
@@ -56,6 +68,7 @@ if [ -e "/sys/class/net/$ETH1_IF" ]; then
     # absent, broken, or created after Android has already given up DHCP, DomD can
     # still reach ADB on 192.168.10.13.
     add_addr "$ETH1_IF" "$ETH1_ADDR"
+    prefer_mgmt_route "$ETH1_IF" "$ETH1_ADDR"
     added=1
     /system/bin/setprop ctl.restart adbd
     restarted=1
@@ -82,6 +95,7 @@ if [ -e "/sys/class/net/$SHADOW_BR" ]; then
     fi
     add_addr "$SHADOW_BR" "$ETH1_ADDR"
     add_addr "$SHADOW_BR" "$SHADOW_ADDR"
+    prefer_mgmt_route "$SHADOW_BR" "$ETH1_ADDR"
     added=1
     /system/bin/setprop ctl.restart adbd
     restarted=1
