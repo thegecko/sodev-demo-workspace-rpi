@@ -1739,6 +1739,14 @@ install_domu_topo_docker_config() {
     cat > ${IMAGE_ROOTFS}${sysconfdir}/docker/daemon.json <<'EOF'
 {"storage-driver":"vfs","iptables":false,"bridge":"none","ip-forward":false,"ip-masq":false}
 EOF
+
+    unit=${IMAGE_ROOTFS}${systemd_system_unitdir}/docker.service
+    wants=${IMAGE_ROOTFS}${sysconfdir}/systemd/system/multi-user.target.wants
+    if [ ! -e "$unit" ]; then
+        bbfatal "docker.service was not installed into the DomU rootfs"
+    fi
+    install -d "$wants"
+    ln -sf ${systemd_system_unitdir}/docker.service "$wants/docker.service"
 }
 # <<< domu-topo-runtime (build.sh -u) <<<
 AGLTOPODOMU
