@@ -283,6 +283,19 @@ fdt set /axi/mmc@1100000 sd-uhs-ddr50
 fdt set /axi/mmc@1100000 mmc-ddr-3_3v
 fdt rm /axi/mmc@1100000 no-1-8-v
 fdt rm /axi/mmc@1100000 max-frequency
+
+# Raspberry Pi OS' BCM2712 DT gives sdio2_30_pins nested pin config: CLK bias
+# disabled, CMD and DAT0-3 bias-pull-up. The mux itself is visible in Linux Dom0
+# (`pinmux-pins` shows gpio30..35 claimed by 1001100000.mmc as sd2), but the
+# failing board showed no SDIO function and debugfs reported the CMD/DAT bias
+# state as disabled. The Zephyr/DomD path already records why these pulls are
+# load-bearing: mux-only let the radio answer CMD5 but later backplane reads were
+# all-ones; without a usable pin state the non-removable card never enumerates.
+# Reassert the upstream pinconf explicitly in the host DT before Linux probes the
+# SDIO host.
+fdt set /soc@107c000000/pinctrl@7d504100/sdio2_30_pins/pin_clk bias-disable
+fdt set /soc@107c000000/pinctrl@7d504100/sdio2_30_pins/pin_cmd bias-pull-up
+fdt set /soc@107c000000/pinctrl@7d504100/sdio2_30_pins/pins_dat bias-pull-up
 # ------------------------------------------------------------------
 
 # ------------------------------------------------------------------
