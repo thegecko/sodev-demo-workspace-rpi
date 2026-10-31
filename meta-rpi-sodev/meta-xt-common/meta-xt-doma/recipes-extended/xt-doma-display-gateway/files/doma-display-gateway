@@ -183,11 +183,23 @@ INDEX = """<!doctype html>
     <strong>DomA Android</strong>
     <span id="status">click display, then use keyboard/mouse</span>
   </div>
-  <img id="screen" tabindex="0" src="/stream" alt="DomA Android display">
+  <img id="screen" tabindex="0" src="/snapshot" alt="DomA Android display">
   <script>
     const screen = document.getElementById('screen');
     const status = document.getElementById('status');
     let down = null;
+
+    function refresh() {
+      screen.src = '/snapshot?' + Date.now();
+    }
+    screen.addEventListener('load', () => {
+      status.textContent = 'display connected';
+      setTimeout(refresh, 500);
+    });
+    screen.addEventListener('error', () => {
+      status.textContent = 'display disconnected; retrying';
+      setTimeout(refresh, 1000);
+    });
 
     function norm(ev) {
       const r = screen.getBoundingClientRect();
@@ -204,7 +216,6 @@ INDEX = """<!doctype html>
         status.textContent = 'input failed: ' + e;
       }
     }
-    screen.addEventListener('error', () => { status.textContent = 'stream disconnected; retrying'; setTimeout(() => screen.src = '/stream?' + Date.now(), 1000); });
     screen.addEventListener('pointerdown', ev => { screen.focus(); down = {...norm(ev), t: Date.now()}; ev.preventDefault(); });
     screen.addEventListener('pointerup', ev => {
       const up = norm(ev); ev.preventDefault();
@@ -244,6 +255,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("content-length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            return
+        if self.path.startswith("/snapshot"):
+            self.snapshot_frame()
             return
         if self.path.startswith("/stream"):
             self.stream_frames()
@@ -293,6 +307,25 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 return
             time.sleep(0.5)
+
+    def snapshot_frame(self) -> None:
+        proc = run_adb(["exec-out", "screencap", "-p"], timeout=8)
+        frame = proc.stdout
+        if proc.returncode != 0 or not frame.startswith(PNG_MAGIC):
+            body = (proc.stderr or proc.stdout or b"screencap failed")[-500:]
+            self.send_response(HTTPStatus.BAD_GATEWAY)
+            self.send_header("content-type", "text/plain; charset=utf-8")
+            self.send_header("cache-control", "no-store")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("content-type", "image/png")
+        self.send_header("cache-control", "no-store")
+        self.send_header("content-length", str(len(frame)))
+        self.end_headers()
+        self.wfile.write(frame)
 
 
 def main() -> None:
