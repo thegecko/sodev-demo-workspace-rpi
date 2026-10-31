@@ -23,9 +23,11 @@ IMAGE_INSTALL:append = " \
 # Install qemu when the enable_virtio DISTRO_FEATURE is set. This line is the
 # sole supplier of the thin qemu-system-aarch64 package (the full `qemu` was
 # removed from the vc4 base); the vmsep DISTRO_FEATURE splits it out.
-# Note: qemu-keymaps is excluded (not packaged in meta-xt-qemu).
+# qemu-keymaps is required by QEMU VNC; DomA's browser display gateway uses a
+# loopback VNC server for headless display capture because Android screencap can
+# return transparent-black frames on the virtual display stack.
 # kernel-module-vhost-net = CONFIG_VHOST_NET=m, installed explicitly for /dev/vhost-net.
-IMAGE_INSTALL:append = "${@bb.utils.contains('DISTRO_FEATURES', 'enable_virtio', ' qemu-system-aarch64 kernel-module-vhost-net', '', d)}"
+IMAGE_INSTALL:append = "${@bb.utils.contains('DISTRO_FEATURES', 'enable_virtio', ' qemu-system-aarch64 qemu-keymaps kernel-module-vhost-net', '', d)}"
 
 # Standard tools
 IMAGE_INSTALL:append = " \

@@ -2,21 +2,26 @@
 # SPDX-License-Identifier: MIT
 """Tiny DomD-hosted browser console for the DomA Android guest.
 
-The display path intentionally uses adb `screencap -p` rather than WebRTC or a
-QEMU display protocol. That keeps the first remote-view/control path independent
-of the fragile HDMI/Weston routing and of browser-side codec support. It is a
-low-FPS management/demo console, not a replacement for the physical display.
+The display path prefers QEMU's loopback VNC server. Android's `screencap -p`
+can return a valid but transparent-black PNG on this virtual display stack even
+while SurfaceFlinger is awake and rendering real layers. VNC sees QEMU's display
+surface instead, so the browser console works without HDMI connected. ADB remains
+the input path and a last-resort display fallback.
 """
 
 from __future__ import annotations
 
 import argparse
+import binascii
 import json
 import os
 import re
+import socket
+import struct
 import subprocess
 import threading
 import time
+import zlib
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -25,6 +30,8 @@ from typing import Any
 DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+VNC_HOST = os.environ.get("DOMA_VNC_HOST", "127.0.0.1")
+VNC_PORT = int(os.environ.get("DOMA_VNC_PORT", "5910"))
 
 adb_lock = threading.Lock()
 size_lock = threading.Lock()
@@ -64,6 +71,115 @@ def run_adb(args: list[str], timeout: float = 10.0, input_bytes: bytes | None = 
         )
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(command, 124, b"", b"adb command timed out")
+
+
+def png_chunk(kind: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", binascii.crc32(kind + data) & 0xFFFFFFFF)
+
+
+def rgba_to_png(width: int, height: int, rgba: bytes) -> bytes:
+    rows = []
+    stride = width * 4
+    for y in range(height):
+        rows.append(b"\x00" + rgba[y * stride : (y + 1) * stride])
+    return b"".join(
+        [
+            PNG_MAGIC,
+            png_chunk("IHDR".encode("ascii"), struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)),
+            png_chunk("IDAT".encode("ascii"), zlib.compress(b"".join(rows), 1)),
+            png_chunk("IEND".encode("ascii"), b""),
+        ]
+    )
+
+
+def recv_exact(sock: socket.socket, length: int) -> bytes:
+    chunks = []
+    remaining = length
+    while remaining:
+        chunk = sock.recv(remaining)
+        if not chunk:
+            raise OSError("VNC connection closed")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def vnc_snapshot(timeout: float = 5.0) -> bytes:
+    with socket.create_connection((VNC_HOST, VNC_PORT), timeout=timeout) as sock:
+        sock.settimeout(timeout)
+        version = recv_exact(sock, 12)
+        if not version.startswith(b"RFB "):
+            raise OSError("invalid VNC greeting")
+        sock.sendall(version)
+
+        count = recv_exact(sock, 1)[0]
+        if count == 0:
+            msg_len = struct.unpack(">I", recv_exact(sock, 4))[0]
+            raise OSError(recv_exact(sock, msg_len).decode("utf-8", "replace"))
+        security = recv_exact(sock, count)
+        if 1 not in security:
+            raise OSError(f"VNC server requires unsupported security types {list(security)}")
+        sock.sendall(b"\x01")
+        result = struct.unpack(">I", recv_exact(sock, 4))[0]
+        if result != 0:
+            raise OSError(f"VNC security failed: {result}")
+
+        sock.sendall(b"\x01")  # shared ClientInit
+        width, height = struct.unpack(">HH", recv_exact(sock, 4))
+        recv_exact(sock, 16)  # server pixel format
+        name_len = struct.unpack(">I", recv_exact(sock, 4))[0]
+        recv_exact(sock, name_len)
+
+        # 32 bpp little-endian true-colour: memory bytes are B, G, R, unused.
+        pixel_format = struct.pack(">BBBBHHHBBBxxx", 32, 24, 0, 1, 255, 255, 255, 16, 8, 0)
+        sock.sendall(b"\x00\x00\x00\x00" + pixel_format)
+        sock.sendall(struct.pack(">BBHi", 2, 0, 1, 0))  # SetEncodings: RAW only
+        sock.sendall(struct.pack(">BBHHHH", 3, 0, 0, 0, width, height))
+
+        while True:
+            msg_type = recv_exact(sock, 1)[0]
+            if msg_type == 0:
+                recv_exact(sock, 1)
+                rects = struct.unpack(">H", recv_exact(sock, 2))[0]
+                rgba = bytearray(width * height * 4)
+                for _ in range(rects):
+                    x, y, rw, rh, encoding = struct.unpack(">HHHHi", recv_exact(sock, 12))
+                    if encoding != 0:
+                        raise OSError(f"unsupported VNC rectangle encoding {encoding}")
+                    raw = recv_exact(sock, rw * rh * 4)
+                    for row in range(rh):
+                        src = row * rw * 4
+                        dst = ((y + row) * width + x) * 4
+                        for px in range(rw):
+                            b, g, r, _ = raw[src + px * 4 : src + px * 4 + 4]
+                            rgba[dst + px * 4 : dst + px * 4 + 4] = bytes((r, g, b, 255))
+                return rgba_to_png(width, height, bytes(rgba))
+            if msg_type == 2:  # bell
+                continue
+            if msg_type == 3:  # server cut text
+                recv_exact(sock, 3)
+                text_len = struct.unpack(">I", recv_exact(sock, 4))[0]
+                recv_exact(sock, text_len)
+                continue
+            raise OSError(f"unexpected VNC message type {msg_type}")
+
+
+def adb_snapshot(timeout: float = 8.0) -> bytes:
+    proc = run_adb(["exec-out", "screencap", "-p"], timeout=timeout)
+    if proc.returncode != 0 or not proc.stdout.startswith(PNG_MAGIC):
+        err = (proc.stderr or proc.stdout or b"screencap failed")[-500:].decode("utf-8", "replace")
+        raise OSError(err)
+    return proc.stdout
+
+
+def display_snapshot() -> bytes:
+    try:
+        return vnc_snapshot()
+    except Exception as vnc_error:
+        try:
+            return adb_snapshot()
+        except Exception as adb_error:
+            raise OSError(f"VNC capture failed: {vnc_error}; ADB screencap failed: {adb_error}") from adb_error
 
 
 def android_size() -> tuple[int, int]:
@@ -294,9 +410,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
         while True:
-            proc = run_adb(["exec-out", "screencap", "-p"], timeout=8)
-            frame = proc.stdout
-            if proc.returncode != 0 or not frame.startswith(PNG_MAGIC):
+            try:
+                frame = display_snapshot()
+            except OSError:
                 time.sleep(1.0)
                 continue
             try:
@@ -309,10 +425,10 @@ class Handler(BaseHTTPRequestHandler):
             time.sleep(0.5)
 
     def snapshot_frame(self) -> None:
-        proc = run_adb(["exec-out", "screencap", "-p"], timeout=8)
-        frame = proc.stdout
-        if proc.returncode != 0 or not frame.startswith(PNG_MAGIC):
-            body = (proc.stderr or proc.stdout or b"screencap failed")[-500:]
+        try:
+            frame = display_snapshot()
+        except OSError as exc:
+            body = str(exc).encode("utf-8", "replace")[-500:]
             self.send_response(HTTPStatus.BAD_GATEWAY)
             self.send_header("content-type", "text/plain; charset=utf-8")
             self.send_header("cache-control", "no-store")

@@ -130,6 +130,7 @@ SRC_URI:append:class-target = "${@d.getVar('QEMU_XT_7_0_0_PATCHES') if d.getVar(
 # ${PN}-system-aarch64 so OE does not drop an empty package.
 FILES:${PN}-aarch64:class-target = "${bindir}/qemu-aarch64"
 FILES:${PN}-system-aarch64:class-target = "${bindir}/qemu-system-aarch64"
+FILES:${PN}-keymaps:class-target = "${datadir}/qemu/keymaps"
 # The same upstream split also leaves an RPROVIDES alias behind: meta-virtualization
 # declares RPROVIDES:${PN}-aarch64:append:class-target = " ${PN}-system-aarch64"
 # because in ITS layout qemu-aarch64 ships both binaries. Here it does not (see the
