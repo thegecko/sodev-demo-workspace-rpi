@@ -1726,6 +1726,20 @@ if [ "${ENABLE_DOMU}" = "yes" ]; then
 # rpi5-image-domu-gfx debug image. Topo deploys to DomU over SSH and expects a
 # reachable Docker daemon plus lscpu for health checks.
 IMAGE_INSTALL:append = " docker-moby util-linux-lscpu"
+
+# The DomU kernel is booted from the SD boot partition while the AGL rootfs ships
+# separately on p3. If the rootfs and kernel module trees ever diverge, Docker's
+# default bridge/iptables startup path can fail before Topo can deploy anything.
+# Keep the Topo target daemon usable without relying on loadable bridge/netfilter
+# modules. This mirrors the live recovery config that made `topo health` green.
+ROOTFS_POSTPROCESS_COMMAND:append = " install_domu_topo_docker_config; "
+
+install_domu_topo_docker_config() {
+    install -d ${IMAGE_ROOTFS}${sysconfdir}/docker
+    cat > ${IMAGE_ROOTFS}${sysconfdir}/docker/daemon.json <<'EOF'
+{"storage-driver":"vfs","iptables":false,"bridge":"none","ip-forward":false,"ip-masq":false}
+EOF
+}
 # <<< domu-topo-runtime (build.sh -u) <<<
 AGLTOPODOMU
   if [ "$GPU" = vulkan ]; then

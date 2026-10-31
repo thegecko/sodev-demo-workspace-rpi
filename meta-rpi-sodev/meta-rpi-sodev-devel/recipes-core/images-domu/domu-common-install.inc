@@ -15,6 +15,7 @@
 IMAGE_INSTALL:append:virtio-armv8-xt = " domu-network docker-moby util-linux-lscpu"
 
 ROOTFS_POSTPROCESS_COMMAND:append:virtio-armv8-xt = " enable_domu_docker; "
+ROOTFS_POSTPROCESS_COMMAND:append:virtio-armv8-xt = " install_domu_topo_docker_config; "
 
 enable_domu_docker() {
     unit="${IMAGE_ROOTFS}${systemd_system_unitdir}/docker.service"
@@ -26,4 +27,11 @@ enable_domu_docker() {
 
     install -d "$wants"
     ln -sf "${systemd_system_unitdir}/docker.service" "$wants/docker.service"
+}
+
+install_domu_topo_docker_config() {
+    install -d "${IMAGE_ROOTFS}${sysconfdir}/docker"
+    cat > "${IMAGE_ROOTFS}${sysconfdir}/docker/daemon.json" <<'EOF'
+{"storage-driver":"vfs","iptables":false,"bridge":"none","ip-forward":false,"ip-masq":false}
+EOF
 }
