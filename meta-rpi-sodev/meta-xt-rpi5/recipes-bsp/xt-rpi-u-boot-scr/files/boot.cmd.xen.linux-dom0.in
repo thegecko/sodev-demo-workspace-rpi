@@ -272,17 +272,17 @@ fdt set /wl-on-reg gpio <0x1b 0x1c 0x0>
 fdt set /wl-on-reg enable-active-high
 fdt rm /axi/mmc@1100000 mmc-pwrseq
 
-# With WL_ON high and the SDIO pinmux claimed, the rebuilt image still failed at
-# the host/card negotiation stage (`mmc1: Failed to initialize a non-removable
-# card`) before brcmfmac ever probed. Keep the first-probe path conservative:
-# the BCM43455 management link does not need CQE or UHS/DDR timing to become
-# usable, and removing those properties avoids asking this non-storage SDIO card
-# to initialise through the high-speed path before it has answered reliably.
-fdt rm /axi/mmc@1100000 supports-cqe
-fdt rm /axi/mmc@1100000 sd-uhs-ddr50
-fdt rm /axi/mmc@1100000 mmc-ddr-3_3v
-fdt set /axi/mmc@1100000 no-1-8-v
-fdt set /axi/mmc@1100000 max-frequency <0x17d7840>
+# Keep the SDIO host capabilities aligned with the known-good Raspberry Pi / DomD
+# Wi-Fi DT. The conservative timing experiment (removing CQE/UHS/DDR, forcing
+# no-1-8-v and 25 MHz) made the next image power WL_ON correctly but left mmc1
+# with no SDIO function and no brcmfmac probe. The DomD/SCMI DT that enumerates
+# the radio carries these properties, so restore them while preserving the
+# regulator-only WL_ON model above.
+fdt set /axi/mmc@1100000 supports-cqe
+fdt set /axi/mmc@1100000 sd-uhs-ddr50
+fdt set /axi/mmc@1100000 mmc-ddr-3_3v
+fdt rm /axi/mmc@1100000 no-1-8-v
+fdt rm /axi/mmc@1100000 max-frequency
 # ------------------------------------------------------------------
 
 # ------------------------------------------------------------------
